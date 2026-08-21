@@ -93,7 +93,7 @@ def _wait_ready(port: int, timeout_s: float = 60.0) -> bool:
             with socket.create_connection((HOST, port), timeout=0.5):
                 return True
         except OSError:
-            time.sleep(0.5)
+            time.sleep(0.08)
     return False
 
 

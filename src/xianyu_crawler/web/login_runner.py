@@ -22,6 +22,7 @@ _TIMEOUT_S = 180               # 二维码等待上限
 
 # 前端轮询读这里: status=idle|starting|waiting|success|expired|failed|busy
 STATE: dict = {"status": "idle", "qr": None, "message": "", "at": None}
+_LOGIN_GENERATION = 0
 
 
 def _now() -> str:
@@ -69,8 +70,11 @@ def start() -> dict:
         return {"status": STATE["status"]}
     if not runner._LOCK.acquire(blocking=False):
         return {"status": "busy", "message": "正在抓取，请稍后再试"}
+    global _LOGIN_GENERATION
+    _LOGIN_GENERATION += 1
+    generation = _LOGIN_GENERATION
     STATE.update(status="starting", qr=None, message="正在打开登录页…", at=_now())
-    threading.Thread(target=_run, daemon=True).start()
+    threading.Thread(target=_run, args=(generation,), daemon=True).start()
     return {"status": "starting"}
 
 
@@ -94,16 +98,22 @@ def _is_scanned(frame) -> bool:
 
 def logout() -> dict:
     """退出登录 / 换号: 删除 storage_state.json 并重置流程状态。"""
+    global _LOGIN_GENERATION
+    _LOGIN_GENERATION += 1       # 立即作废仍在运行的旧扫码线程，禁止它重新写入登录态
     f = Settings().data_dir / "storage_state.json"
+    marker = Settings().data_dir / ".logout_marker"
     try:
         f.unlink()
     except FileNotFoundError:
         pass
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(_now(), encoding="utf-8")
+    account.clear()
     STATE.update(status="idle", qr=None, message="已退出登录", at=_now())
     return status()
 
 
-def _run() -> None:
+def _run(generation: int) -> None:
     runner.STATE["running"] = True
     state_path = str(Settings().data_dir / "storage_state.json")
     prof = pick_profile()
@@ -114,12 +124,15 @@ def _run() -> None:
                 locale="zh-CN", user_agent=prof["user_agent"], viewport=prof["viewport"])
             page = ctx.new_page()
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(700)
             STATE.update(status="waiting", message="用「闲鱼」App 扫一扫登录")
             deadline = time.time() + _TIMEOUT_S
             ok = False
             scanned = False
             while time.time() < deadline:
+                if generation != _LOGIN_GENERATION:
+                    STATE.update(status="idle", qr=None, message="已退出登录", at=_now())
+                    return
                 if _logged_in(page.url):
                     ok = True
                     break
@@ -135,8 +148,10 @@ def _run() -> None:
                         STATE["qr"] = "data:image/png;base64," + base64.b64encode(png).decode()
                     except Exception:
                         pass                           # 二维码暂不可用/刷新中, 下轮再试
-                page.wait_for_timeout(1200)            # 提速: 扫码后更快翻到 success
+                page.wait_for_timeout(500)             # 更快反馈扫码与确认状态
             if ok:
+                if generation != _LOGIN_GENERATION:
+                    return
                 Path(state_path).parent.mkdir(parents=True, exist_ok=True)
                 ctx.storage_state(path=state_path)
                 STATE.update(status="success", qr=None, message="登录成功，已保存登录态", at=_now())

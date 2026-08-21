@@ -22,6 +22,10 @@ def browser_session(settings, state_path: str | None = None):
     """
     if state_path is None:
         state_path = str(Path(settings.data_dir) / "storage_state.json")
+    # 若用户在抓取过程中点击退出，退出标记会改变；旧浏览器会话不得在 finally
+    # 中把 cookie 写回来，否则表现为“退出后自动登录”。
+    logout_marker = Path(settings.data_dir) / ".logout_marker"
+    logout_generation = logout_marker.read_text(encoding="utf-8") if logout_marker.exists() else ""
     profile = pick_profile()
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -40,8 +44,10 @@ def browser_session(settings, state_path: str | None = None):
             yield ctx
         finally:
             try:
-                Path(state_path).parent.mkdir(parents=True, exist_ok=True)
-                ctx.storage_state(path=state_path)
+                current_generation = logout_marker.read_text(encoding="utf-8") if logout_marker.exists() else ""
+                if current_generation == logout_generation:
+                    Path(state_path).parent.mkdir(parents=True, exist_ok=True)
+                    ctx.storage_state(path=state_path)
             finally:
                 browser.close()
 

@@ -38,3 +38,11 @@ def avatar() -> str | None:
         return json.loads(p.read_text(encoding="utf-8")).get("avatar")
     except Exception:
         return None
+
+
+def clear() -> None:
+    """退出账号时同步清除头像缓存，避免界面继续显示上一个账号。"""
+    try:
+        _path().unlink()
+    except FileNotFoundError:
+        pass

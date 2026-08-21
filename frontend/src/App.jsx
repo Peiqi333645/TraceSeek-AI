@@ -137,7 +137,7 @@ export default function App() {
 
   useEffect(() => {
     poll()
-    const t = setInterval(poll, 4000)
+    const t = setInterval(poll, 2500)
     return () => clearInterval(t)
   }, [])
 
@@ -147,6 +147,8 @@ export default function App() {
 
   const run = async (watch) => {
     setRunMenu(false)
+    wasRunning.current = true
+    setStatus((current) => ({ ...(current || {}), running: true }))
     await api.run(watch)
     showToast(watch ? `已触发「${watch}」抓取…` : '已触发全部抓取，约 30–60 秒，完成后自动刷新…')
     poll()
