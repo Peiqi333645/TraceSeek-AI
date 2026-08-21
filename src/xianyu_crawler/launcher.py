@@ -23,6 +23,20 @@ from pathlib import Path
 
 HOST, PORT = "127.0.0.1", 8000
 WINDOW_TITLE = "寻迹AI助手"
+_DEVNULL_STREAMS: list[object] = []
+
+
+def _ensure_stdio() -> None:
+    """为 Windows 无控制台打包补上安全的标准输出流。
+
+    PyInstaller ``console=False`` 时 Windows 会把 stdout/stderr 设为 None，
+    Uvicorn 的日志格式器会调用 ``isatty()``，若不处理会在启动阶段崩溃。
+    """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name, None) is None:
+            stream = open(os.devnull, "w", encoding="utf-8", buffering=1)
+            _DEVNULL_STREAMS.append(stream)
+            setattr(sys, name, stream)
 
 
 def _user_data_dir() -> Path:
@@ -132,6 +146,7 @@ def _setup_logging(data_dir: Path) -> None:
 
 
 def main() -> None:
+    _ensure_stdio()
     if "--selfcheck" in sys.argv:
         sys.exit(_selfcheck())
 
@@ -161,7 +176,16 @@ def main() -> None:
     print(f">> 寻迹AI助手: {url} (数据目录: {os.environ['XIANYU_DATA_DIR']})")
 
     # 服务跑后台线程, 主线程留给原生窗口(WKWebView 必须在主线程)
-    config = uvicorn.Config(app, host=HOST, port=port, log_level="warning")
+    # 使用本应用自己的文件日志，避免 Windows GUI 包的 Uvicorn 默认彩色日志
+    # 再次探测不存在的控制台输出流。
+    config = uvicorn.Config(
+        app,
+        host=HOST,
+        port=port,
+        log_level="warning",
+        log_config=None,
+        access_log=False,
+    )
     server = uvicorn.Server(config)
     srv_thread = threading.Thread(target=server.run, daemon=True)
     srv_thread.start()
