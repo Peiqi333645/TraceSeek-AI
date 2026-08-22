@@ -1,5 +1,7 @@
-"""控制台图形化扫码登录: 后台 headless 浏览器开闲鱼登录页, 截二维码给前端扫,
-扫码确认成功后存 storage_state.json。复用 runner 全局浏览器锁(与抓取串行)。
+"""打开闲鱼官方登录窗口，允许用户选择扫码、短信或账号方式。
+
+登录成功后只保存浏览器会话，不读取或保存用户密码。复用 runner 全局浏览器锁
+(与抓取串行)。
 """
 from __future__ import annotations
 
@@ -94,7 +96,7 @@ def start() -> dict:
     global _LOGIN_GENERATION
     _LOGIN_GENERATION += 1
     generation = _LOGIN_GENERATION
-    STATE.update(status="starting", qr=None, message="正在打开登录页…", at=_now())
+    STATE.update(status="starting", qr=None, message="正在打开闲鱼官方登录窗口…", at=_now())
     threading.Thread(target=_run, args=(generation,), daemon=True).start()
     return {"status": "starting"}
 
@@ -140,13 +142,15 @@ def _run(generation: int) -> None:
     prof = pick_profile()
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            # 可见的官方登录页会展示当前可用的扫码、短信和账号方式。
+            # 具体选项由闲鱼官方决定，软件不接触用户密码。
+            browser = p.chromium.launch(headless=False)
             ctx = browser.new_context(
                 locale="zh-CN", user_agent=prof["user_agent"], viewport=prof["viewport"])
             page = ctx.new_page()
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(700)
-            STATE.update(status="waiting", message="用「闲鱼」App 扫一扫登录")
+            STATE.update(status="waiting", message="请在弹出的闲鱼官方窗口选择登录方式")
             deadline = time.time() + _TIMEOUT_S
             ok = False
             scanned = False

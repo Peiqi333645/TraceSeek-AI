@@ -220,6 +220,19 @@ def api_status(_: None = Depends(require_login), s: Session = Depends(get_db)):
 if _STATIC_DIR.exists():
     app.mount("/assets", StaticFiles(directory=_STATIC_DIR / "assets"), name="assets")
 
+    @app.get("/brand-icon.png", include_in_schema=False)
+    def brand_icon():
+        """Serve the brand icon copied by Vite from frontend/public.
+
+        Root-level public files are not part of the /assets mount.  Without
+        this route the SPA fallback below returns index.html for the PNG URL,
+        which browsers display as a broken image.
+        """
+        icon = _STATIC_DIR / "brand-icon.png"
+        if icon.exists():
+            return FileResponse(icon, media_type="image/png")
+        raise HTTPException(404)
+
     @app.get("/{full_path:path}")
     def spa(full_path: str):
         index = _STATIC_DIR / "index.html"

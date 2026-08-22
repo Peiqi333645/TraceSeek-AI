@@ -169,8 +169,14 @@ export default function App() {
   const loggedIn = !!login.authenticated
 
   const startLogin = async () => {
-    await api.loginStart()
-    poll()
+    try {
+      const next = await api.loginStart()
+      setLogin((current) => ({ ...current, ...next }))
+      if (next.message) showToast(next.message)
+      poll()
+    } catch {
+      showToast('登录窗口打开失败，请重试')
+    }
   }
 
   const activeTab = EVENT_TABS.find((t) => t.key === eventTab) || EVENT_TABS[0]
@@ -261,17 +267,20 @@ export default function App() {
             <img className="welcome-icon" src="/brand-icon.png" alt="寻迹AI助手" />
             <h1>欢迎使用寻迹AI助手</h1>
             <p>登录闲鱼账号后，才能使用推荐、收藏监控和条件设置。</p>
-            {login.qr ? (
-              <div className="welcome-qr">
-                <img src={login.qr} alt="闲鱼登录二维码" />
-                <span>{login.message || '请使用闲鱼 App 扫码并在手机确认'}</span>
-              </div>
+            <div className="login-methods" aria-label="支持的登录方式">
+              <span><i className="ti ti-scan" /> 扫码登录</span>
+              <span><i className="ti ti-message" /> 短信登录</span>
+              <span><i className="ti ti-user" /> 账号登录</span>
+            </div>
+            {['starting', 'waiting', 'scanned'].includes(login.status) ? (
+              <div className="login-opening"><span className="spinner" />{login.message || '请在弹出的闲鱼官方窗口完成登录…'}</div>
             ) : (
               <button className="welcome-login" onClick={startLogin} disabled={['starting', 'scanned'].includes(login.status)}>
-                <i className="ti ti-scan" />
-                {['starting', 'scanned'].includes(login.status) ? (login.message || '登录中…') : '扫码登录闲鱼'}
+                <i className="ti ti-login" />
+                打开闲鱼官方登录
               </button>
             )}
+            {['expired', 'failed', 'busy'].includes(login.status) && <div className="login-error">{login.message}</div>}
             <small>退出账号后，本机数据会安全保留；再次登录即可恢复。</small>
           </div>
         ) : <Routes>
