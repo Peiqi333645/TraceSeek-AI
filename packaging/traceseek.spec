@@ -30,6 +30,8 @@ for pkg in ("playwright", "uvicorn", "fastapi", "starlette", "apscheduler",
 
 # 前端构建产物(放到与包结构一致的相对路径, app.py 据 _MEIPASS 解析)
 datas += [(os.path.join(PKG_DIR, "web", "static"), "xianyu_crawler/web/static")]
+# MIT 要求发行副本保留版权与许可文本；放入应用资源/Windows 安装目录。
+datas += [(os.path.join(SPECPATH, "..", "LICENSE"), ".")]
 hiddenimports += ["xianyu_crawler", "xianyu_crawler.web.app"]
 
 # pywebview: UI 原生窗口(含 JS 桥接资源)+ 各平台后端

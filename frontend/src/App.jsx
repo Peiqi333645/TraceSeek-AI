@@ -87,7 +87,7 @@ export default function App() {
   const [status, setStatus] = useState(null)
   const [stats, setStats] = useState(ZERO)
   const [events, setEvents] = useState(null)
-  const [login, setLogin] = useState({ has_state: false })
+  const [login, setLogin] = useState({ has_state: false, authenticated: false, status: 'idle' })
   const [toast, setToast] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [railOpen, setRailOpen] = useState(() => localStorage.getItem('xy-rail') !== '0')
@@ -116,13 +116,20 @@ export default function App() {
 
   const poll = async () => {
     try {
-      const [st, sg, ev, lg] = await Promise.all([
-        api.status(), api.stats(), api.events(), api.loginStatus(),
-      ])
+      const lg = await api.loginStatus()
+      setLogin(lg)
+      if (!lg.authenticated) {
+        setStatus(null)
+        setStats(ZERO)
+        setEvents([])
+        setWatchList([])
+        wasRunning.current = false
+        return
+      }
+      const [st, sg, ev] = await Promise.all([api.status(), api.stats(), api.events()])
       setStatus(st)
       setStats(sg)
       setEvents(ev)
-      setLogin(lg)
       if (wasRunning.current && !st.running) {
         setRefreshKey((k) => k + 1)
         if (st.last?.error) showToast(`抓取出错：${st.last.error}`)
@@ -142,10 +149,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    api.watches().then(setWatchList).catch(() => {})
-  }, [refreshKey])
+    if (login.authenticated) api.watches().then(setWatchList).catch(() => {})
+  }, [refreshKey, login.authenticated])
 
   const run = async (watch) => {
+    if (!login.authenticated) {
+      showToast('请先登录闲鱼账号')
+      return
+    }
     setRunMenu(false)
     wasRunning.current = true
     setStatus((current) => ({ ...(current || {}), running: true }))
@@ -155,32 +166,29 @@ export default function App() {
   }
 
   const running = status?.running
-  const metrics = [
-    { k: '待审推荐', i: 'ti-inbox', v: stats.pending, small: stats.passed ? `通过 ${stats.passed}` : null },
-    { k: '监控条件', i: 'ti-target', v: stats.watches },
-    { k: '收藏监控', i: 'ti-bookmark', v: stats.favorites },
-    { k: '今日降价', i: 'ti-trending-down', v: stats.drops_today },
-    { k: '死链', i: 'ti-circle-x', v: stats.dead },
-  ]
+  const loggedIn = !!login.authenticated
+
+  const startLogin = async () => {
+    await api.loginStart()
+    poll()
+  }
 
   const activeTab = EVENT_TABS.find((t) => t.key === eventTab) || EVENT_TABS[0]
   const shownEvents =
     events === null ? null : activeTab.types ? events.filter((e) => activeTab.types.includes(e.type)) : events
 
   return (
-    <div id="app" data-s="sunny" data-collapsed={collapsed ? '1' : '0'} data-rail={railOpen ? '1' : '0'}>
+    <div id="app" data-s="premium" data-auth={loggedIn ? '1' : '0'} data-collapsed={collapsed ? '1' : '0'} data-rail={railOpen ? '1' : '0'}>
       {/* 顶栏 */}
       <div className="top">
         <div className="logo">
-          <span className="mk">
-            <i className="ti ti-bolt" />
-          </span>
+          <img className="brand-icon" src="/brand-icon.png" alt="" />
           寻迹AI助手
         </div>
         <div className="grow" />
         <div className="live">
           <span className={'pulse' + (running ? ' on' : '')} />
-          {running ? '抓取中…' : login.has_state ? '空闲 · 登录态正常' : '空闲 · 未登录'}
+          {running ? '正在更新…' : loggedIn ? '运行正常' : '请先登录'}
         </div>
         <button
           className={'icon-btn' + (railOpen ? ' on' : '')}
@@ -190,7 +198,7 @@ export default function App() {
           <i className="ti ti-bell" />
         </button>
         <div className="run-wrap">
-          <button className="run" disabled={running} onClick={() => setRunMenu((o) => !o)}>
+          <button className="run" disabled={running || !loggedIn} onClick={() => setRunMenu((o) => !o)}>
             <i className="ti ti-player-play" />
             立即运行
             <i className="ti ti-chevron-down" style={{ fontSize: 14 }} />
@@ -219,7 +227,7 @@ export default function App() {
       {running && <div className="run-progress"><span /></div>}
 
       {/* 侧栏 */}
-      <div className="side">
+      {loggedIn && <div className="side">
         {NAV.map(([path, label, icon, key]) => (
           <NavLink key={path} to={path} className={({ isActive }) => 'nav' + (isActive ? ' active' : '')}>
             <i className={'ti ' + icon} />
@@ -235,49 +243,52 @@ export default function App() {
         <Link
           to="/settings"
           className="acct"
-          title={login.account ? `已登录：${login.account}` : login.has_state ? '已登录' : '未登录 · 去扫码'}
+          title={login.account ? `已登录：${login.account}` : '已登录'}
         >
           <span className="av">
             {login.account ? login.account[0].toUpperCase() : <i className="ti ti-user" />}
             {login.avatar && <img src={login.avatar} alt="" onError={(e) => e.currentTarget.remove()} />}
           </span>
-          <span className="who">{login.account || (login.has_state ? '已登录' : '未登录')}</span>
-          <span className={'dot ' + (login.has_state ? 'on' : 'off')} />
+          <span className="who">{login.account || '已登录'}</span>
+          <span className="dot on" />
         </Link>
-      </div>
+      </div>}
 
       {/* 主区 */}
       <div className="main">
-        <div className="strip">
-          {metrics.map((m) => (
-            <div className="metric" key={m.k}>
-              <div className="k">
-                <i className={'ti ' + m.i} />
-                {m.k}
+        {!loggedIn ? (
+          <div className="login-welcome">
+            <img className="welcome-icon" src="/brand-icon.png" alt="寻迹AI助手" />
+            <h1>欢迎使用寻迹AI助手</h1>
+            <p>登录闲鱼账号后，才能使用推荐、收藏监控和条件设置。</p>
+            {login.qr ? (
+              <div className="welcome-qr">
+                <img src={login.qr} alt="闲鱼登录二维码" />
+                <span>{login.message || '请使用闲鱼 App 扫码并在手机确认'}</span>
               </div>
-              <div className="v">
-                {m.v}
-                {m.small && <small>{m.small}</small>}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <Routes>
+            ) : (
+              <button className="welcome-login" onClick={startLogin} disabled={['starting', 'scanned'].includes(login.status)}>
+                <i className="ti ti-scan" />
+                {['starting', 'scanned'].includes(login.status) ? (login.message || '登录中…') : '扫码登录闲鱼'}
+              </button>
+            )}
+            <small>退出账号后，本机数据会安全保留；再次登录即可恢复。</small>
+          </div>
+        ) : <Routes>
           <Route path="/" element={<Navigate to="/recommendations" replace />} />
           <Route
             path="/recommendations"
-            element={<Recommendations refreshKey={refreshKey} onToast={showToast} />}
+            element={<Recommendations refreshKey={refreshKey} onToast={showToast} dropsToday={stats.drops_today} />}
           />
           <Route path="/favorites" element={<Drops refreshKey={refreshKey} />} />
           <Route path="/watches" element={<Watches />} />
           <Route path="/settings" element={<Settings status={status} />} />
           <Route path="*" element={<Navigate to="/recommendations" replace />} />
-        </Routes>
+        </Routes>}
       </div>
 
       {/* 右栏 · 实时事件(可收起 + 按类型分 tab) */}
-      <div className="rail">
+      {loggedIn && <div className="rail">
         <div className="rt">
           <i className="ti ti-activity" />
           实时事件
@@ -309,7 +320,7 @@ export default function App() {
             shownEvents.map((e, idx) => <EventRow key={`${e.item_id}-${e.created_at}-${idx}`} e={e} />)
           )}
         </div>
-      </div>
+      </div>}
 
       {toast && <div className="toast">{toast}</div>}
     </div>

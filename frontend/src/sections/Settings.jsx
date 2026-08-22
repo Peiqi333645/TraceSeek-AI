@@ -98,6 +98,6 @@ export default function Settings({ status }) {
       <div><span className={cfg.notify_to ? 'service-dot on' : 'service-dot'} /><b>消息提醒</b><small>{cfg.notify_to ? '已开启' : '待填写邮箱'}</small></div>
       <div><span className={status?.running ? 'service-dot busy' : 'service-dot on'} /><b>运行状态</b><small>{status?.running ? '正在执行' : '准备就绪'}</small></div>
     </Card>
-    <ConfirmDialog open={confirmLogout} danger title="退出账号" message="退出后需要重新扫码，确定退出吗？" confirmText="确认退出" onConfirm={logout} onCancel={() => setConfirmLogout(false)} />
+    <ConfirmDialog open={confirmLogout} danger title="退出账号" message="只退出当前账号，不会删除收藏、推荐和条件设置。再次登录即可恢复。" confirmText="确认退出" onConfirm={logout} onCancel={() => setConfirmLogout(false)} />
   </section>
 }

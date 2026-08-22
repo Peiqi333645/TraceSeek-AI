@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     min_drop_pct: float = 5.0
     min_drop_abs: float = 50.0
     headless: bool = False
-    action_delay_min: float = 3.0
-    action_delay_max: float = 8.0
+    action_delay_min: float = 1.5
+    action_delay_max: float = 3.5
     search_url: str = "https://www.goofish.com/search"
     favorites_url: str = "https://www.goofish.com/collection"
     search_max_pages: int = 3
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # 商业版统一网关。由运营方通过 XIANYU_BILLING_BASE_URL 注入；上游主密钥不进入客户端。
     billing_base_url: str | None = None
     # 死链探测: 每轮最多对多少条待审推荐打开详情页核活(防止单轮太久)
-    liveness_max_checks: int = 30
+    liveness_max_checks: int = 12
     # 密钥(系统环境变量): XIANYU_SMTP_HOST/PORT/USER/PASS, XIANYU_NOTIFY_TO
     smtp_host: str | None = None
     smtp_port: int = 465

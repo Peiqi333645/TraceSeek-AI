@@ -22,6 +22,7 @@ def browser_session(settings, state_path: str | None = None):
     """
     if state_path is None:
         state_path = str(Path(settings.data_dir) / "storage_state.json")
+    had_saved_state = Path(state_path).exists()
     # 若用户在抓取过程中点击退出，退出标记会改变；旧浏览器会话不得在 finally
     # 中把 cookie 写回来，否则表现为“退出后自动登录”。
     logout_marker = Path(settings.data_dir) / ".logout_marker"
@@ -45,7 +46,9 @@ def browser_session(settings, state_path: str | None = None):
         finally:
             try:
                 current_generation = logout_marker.read_text(encoding="utf-8") if logout_marker.exists() else ""
-                if current_generation == logout_generation:
+                # 普通抓取只能刷新已有登录态，绝不能在未登录启动后写出一个
+                # 空 storage_state.json，否则界面会误判为“退出后自动登录”。
+                if had_saved_state and current_generation == logout_generation:
                     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
                     ctx.storage_state(path=state_path)
             finally:

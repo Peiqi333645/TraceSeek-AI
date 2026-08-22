@@ -1,7 +1,7 @@
 """进程内定时调度(APScheduler): 两个独立任务。
 
-- crawl (schedule_minutes, 默认 120): 推荐抓取 + 死链核活 + 通知。
-- favorites (favorites_minutes, 默认 30): 收藏刷新 + 降价通知。
+- crawl (schedule_minutes, 默认 15): 推荐抓取 + 死链核活 + 通知。
+- favorites (favorites_minutes, 默认 10): 收藏刷新 + 降价通知。
 
 防重入: 每个 job max_instances=1 + coalesce; runner 还有全局锁兜底(两任务共用一把锁,
 不会并发开浏览器)。暂停由各 runner 函数内部检查 AppConfig.paused 实现。

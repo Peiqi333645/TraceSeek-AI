@@ -32,19 +32,25 @@ def get_db():
         s.close()
 
 
+def require_login() -> None:
+    """所有业务操作的后端门禁；不能只依赖前端隐藏按钮。"""
+    if not login_runner.has_session():
+        raise HTTPException(401, "请先登录闲鱼账号")
+
+
 # ---------- watches ----------
 @app.get("/api/watches", response_model=list[dto.WatchOut])
-def api_list_watches(s: Session = Depends(get_db)):
+def api_list_watches(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return [dto.watchrow_to_out(w) for w in repo.list_watches(s)]
 
 
 @app.post("/api/watches", response_model=dto.WatchOut)
-def api_create_watch(body: dto.WatchIn, s: Session = Depends(get_db)):
+def api_create_watch(body: dto.WatchIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
     return dto.watchrow_to_out(repo.add_watch(s, **dto.watchin_to_fields(body)))
 
 
 @app.put("/api/watches/{wid}", response_model=dto.WatchOut)
-def api_update_watch(wid: int, body: dto.WatchIn, s: Session = Depends(get_db)):
+def api_update_watch(wid: int, body: dto.WatchIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
     row = repo.update_watch(s, wid, **dto.watchin_to_fields(body))
     if row is None:
         raise HTTPException(404, "watch not found")
@@ -52,19 +58,19 @@ def api_update_watch(wid: int, body: dto.WatchIn, s: Session = Depends(get_db)):
 
 
 @app.delete("/api/watches/{wid}")
-def api_delete_watch(wid: int, s: Session = Depends(get_db)):
+def api_delete_watch(wid: int, _: None = Depends(require_login), s: Session = Depends(get_db)):
     repo.delete_watch(s, wid)
     return {"ok": True}
 
 
 # ---------- config ----------
 @app.get("/api/config", response_model=dto.ConfigOut)
-def api_get_config(s: Session = Depends(get_db)):
+def api_get_config(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return dto.config_to_out(repo.get_config(s))
 
 
 @app.put("/api/config", response_model=dto.ConfigOut)
-def api_put_config(body: dto.ConfigIn, s: Session = Depends(get_db)):
+def api_put_config(body: dto.ConfigIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     cfg = repo.update_config(s, **fields)
     try:
@@ -76,13 +82,13 @@ def api_put_config(body: dto.ConfigIn, s: Session = Depends(get_db)):
 
 
 @app.get("/api/billing/status")
-def api_billing_status(s: Session = Depends(get_db)):
+def api_billing_status(_: None = Depends(require_login), s: Session = Depends(get_db)):
     cfg = repo.get_config(s)
     return billing.account(Settings(), cfg.billing_access_token)
 
 
 @app.post("/api/billing/activate")
-def api_billing_activate(body: dto.ActivationIn, s: Session = Depends(get_db)):
+def api_billing_activate(body: dto.ActivationIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
     result = billing.activate(Settings(), body.code)
     if result.get("ok"):
         token = str(result.pop("access_token"))
@@ -98,7 +104,7 @@ def api_billing_activate(body: dto.ActivationIn, s: Session = Depends(get_db)):
 
 
 @app.post("/api/test-email")
-async def api_test_email(s: Session = Depends(get_db)):
+async def api_test_email(_: None = Depends(require_login), s: Session = Depends(get_db)):
     """用当前(已保存的)配置发一封测试邮件; 返回成功或错误原因。"""
     settings = service.effective_settings(repo.get_config(s))
     try:
@@ -109,7 +115,7 @@ async def api_test_email(s: Session = Depends(get_db)):
 
 
 @app.post("/api/test-review")
-async def api_test_review(s: Session = Depends(get_db)):
+async def api_test_review(_: None = Depends(require_login), s: Session = Depends(get_db)):
     """用当前(已保存的)配置 + 真实「AI 审核要求」做一次真实审核; 回显成功或错误原因。"""
     settings = service.effective_settings(repo.get_config(s))
     reqs = [w.requirement for w in repo.list_watches(s) if w.requirement]
@@ -119,12 +125,12 @@ async def api_test_review(s: Session = Depends(get_db)):
 
 # ---------- recommendations ----------
 @app.get("/api/recommendations", response_model=list[dto.RecommendationOut])
-def api_list_recs(status: str = "new", s: Session = Depends(get_db)):
+def api_list_recs(status: str = "new", _: None = Depends(require_login), s: Session = Depends(get_db)):
     return [dto.itemrow_to_rec(r) for r in repo.list_recommendations(s, status)]
 
 
 @app.post("/api/recommendations/review")
-def api_rereview(s: Session = Depends(get_db)):
+def api_rereview(_: None = Depends(require_login), s: Session = Depends(get_db)):
     """一键 AI 审核: 用当前 LLM 配置对已入库的待审推荐重新审核(补审之前没跑通的), 不重新抓取。
 
     同步 def → FastAPI 在线程池里跑, LLM 调用阻塞该 worker, 与 session 同线程, 安全。
@@ -134,19 +140,19 @@ def api_rereview(s: Session = Depends(get_db)):
 
 
 @app.post("/api/recommendations/{item_id}/approve")
-async def api_approve(item_id: str):
+async def api_approve(item_id: str, _: None = Depends(require_login)):
     ok = await run_in_threadpool(runner.approve, item_id)
     return {"ok": ok}
 
 
 @app.post("/api/recommendations/{item_id}/reject")
-def api_reject(item_id: str, s: Session = Depends(get_db)):
+def api_reject(item_id: str, _: None = Depends(require_login), s: Session = Depends(get_db)):
     repo.set_rec_status(s, item_id, "rejected")
     return {"ok": True}
 
 
 @app.post("/api/recommendations/{item_id}/mute")
-def api_mute(item_id: str, days: int = 7, s: Session = Depends(get_db)):
+def api_mute(item_id: str, days: int = 7, _: None = Depends(require_login), s: Session = Depends(get_db)):
     """近期不看: days=1/7 暂时隐藏(到期重现), days=0 永久不看。"""
     service.mute_recommendation(s, item_id, days)
     return {"ok": True}
@@ -154,17 +160,17 @@ def api_mute(item_id: str, days: int = 7, s: Session = Depends(get_db)):
 
 # ---------- favorites + drops ----------
 @app.get("/api/favorites", response_model=list[dto.FavoriteOut])
-def api_favorites(s: Session = Depends(get_db)):
+def api_favorites(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return [dto.itemrow_to_fav(r) for r in repo.list_favorites(s)]
 
 
 @app.get("/api/stats")
-def api_stats(s: Session = Depends(get_db)):
+def api_stats(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return repo.stats(s)
 
 
 @app.get("/api/events")
-def api_events(s: Session = Depends(get_db)):
+def api_events(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return [
         {"item_id": e.item_id, "type": e.type, "payload": json.loads(e.payload),
          "created_at": dto._iso(e.created_at)}   # 标 UTC, 前端才能转本地时区(与其它时间一致)
@@ -193,14 +199,14 @@ def api_login_logout():
 
 # ---------- run + status ----------
 @app.post("/api/run")
-def api_run(watch: str | None = None):
+def api_run(watch: str | None = None, _: None = Depends(require_login)):
     """watch=None → 全量; watch=条件名 → 只跑该条件。"""
     threading.Thread(target=runner.crawl, args=(watch,), daemon=True).start()
     return {"status": "queued", "scope": watch or "all"}
 
 
 @app.get("/api/status")
-def api_status(s: Session = Depends(get_db)):
+def api_status(_: None = Depends(require_login), s: Session = Depends(get_db)):
     cfg = repo.get_config(s)
     return {
         "running": runner.STATE["running"],

@@ -1,37 +1,32 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { Card, Button, Badge, Spinner, EmptyState, Thumb, TimeMeta } from '../components/ui'
+import { Card, Button, Badge, Spinner, EmptyState, Thumb, TimeMeta, Toggle } from '../components/ui'
 import { yuan, fmtDate, fmtDateTime, ago } from '../util'
 
-export default function Recommendations({ refreshKey, onToast }) {
+export default function Recommendations({ refreshKey, onToast, dropsToday = 0 }) {
   const [items, setItems] = useState(null)
+  const [cfg, setCfg] = useState(null)
   const [busy, setBusy] = useState({})
   const [muteOpen, setMuteOpen] = useState(null)
-  const [onlyPassed, setOnlyPassed] = useState(true) // 默认只看 LLM 通过的
-  const [reviewing, setReviewing] = useState(false)
+  const [onlyPassed, setOnlyPassed] = useState(true)
+  const [sort, setSort] = useState('newest')
 
-  const load = () => api.recommendations('new').then(setItems)
+  const load = () => Promise.all([api.recommendations('new'), api.config()]).then(([xs, c]) => {
+    setItems(xs)
+    setCfg(c)
+    if (!c.review_enabled) setOnlyPassed(false)
+  })
   useEffect(() => {
     load()
   }, [refreshKey])
 
-  // 一键 AI 审核: 用当前 LLM 配置对已入库的待审推荐补审(不重新抓取)
-  const reviewAll = async () => {
-    setReviewing(true)
-    try {
-      const r = await api.reviewPending()
-      if (r.ok === false) {
-        onToast?.(r.error || 'AI 审核未运行')
-      } else {
-        const parts = [`已审核 ${r.reviewed} 条`, `通过 ${r.passed}`, `未过 ${r.rejected}`]
-        if (r.not_run) parts.push(`${r.not_run} 条没跑通（用「测试 LLM」查接口）`)
-        if (r.skipped_no_requirement) parts.push(`${r.skipped_no_requirement} 条无审核要求已跳过`)
-        onToast?.(parts.join(' · '))
-        await load()
-      }
-    } finally {
-      setReviewing(false)
-    }
+  const setAiEnabled = async (enabled) => {
+    const next = { ...cfg, review_enabled: enabled, smtp_pass: null, review_api_token: null }
+    const saved = await api.saveConfig(next)
+    setCfg(saved)
+    setOnlyPassed(enabled)
+    onToast?.(enabled ? '已开启AI智能筛选' : '已关闭AI筛选，将显示所有候选商品')
   }
 
   const act = async (id, fn) => {
@@ -125,10 +120,15 @@ export default function Recommendations({ refreshKey, onToast }) {
     )
   }
 
-  if (items === null) return <Spinner />
+  if (items === null || cfg === null) return <Spinner />
 
-  const passedCount = items.filter((x) => x.rec_ok !== false).length
-  const shown = onlyPassed ? items.filter((x) => x.rec_ok !== false) : items
+  const passedCount = items.filter((x) => x.rec_ok === true).length
+  const filtered = onlyPassed ? items.filter((x) => x.rec_ok === true) : items
+  const shown = [...filtered].sort((a, b) => {
+    if (sort === 'price-asc') return Number(a.price || 0) - Number(b.price || 0)
+    if (sort === 'price-desc') return Number(b.price || 0) - Number(a.price || 0)
+    return String(b.rec_created_at || '').localeCompare(String(a.rec_created_at || ''))
+  })
 
   // 按监控条件(watch)分组, 保持原有顺序(死链末尾 / 新推荐在前)
   const order = []
@@ -146,29 +146,37 @@ export default function Recommendations({ refreshKey, onToast }) {
     <section>
       <h1 className="page-title">
         待审推荐 {shown.length > 0 && <span className="count">{shown.length}</span>}
+        <Link className="drop-shortcut" to="/favorites">
+          <i className="ti ti-trending-down" /> 今日降价 <b>{dropsToday}</b>
+        </Link>
       </h1>
-      <p className="page-sub">定时发现你没见过的商品，你来决定收藏或忽略。按监控条件分组。</p>
+      <p className="page-sub">自动发现符合条件的新商品。AI精选只显示智能判断更符合要求的结果。</p>
       {items.length > 0 && (
         <div className="rec-toolbar">
           <div className="rec-filter">
-            <button className={`seg${onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(true)}>
-              仅 LLM 通过 <b>{passedCount}</b>
+            <button disabled={!cfg.review_enabled} className={`seg${onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(true)}>
+              AI精选 <b>{passedCount}</b>
             </button>
             <button className={`seg${!onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(false)}>
-              全部 <b>{items.length}</b>
+              所有候选 <b>{items.length}</b>
             </button>
           </div>
-          <Button variant="ghost" disabled={reviewing} onClick={reviewAll}>
-            {reviewing ? 'AI 审核中…' : '一键 AI 审核'}
-          </Button>
+          <div className="rec-tools">
+            <Toggle checked={cfg.review_enabled} onChange={setAiEnabled} label="使用AI智能筛选" />
+            <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="newest">最新发现</option>
+              <option value="price-asc">价格从低到高</option>
+              <option value="price-desc">价格从高到低</option>
+            </select>
+          </div>
         </div>
       )}
       {shown.length === 0 ? (
         <EmptyState
-          title={onlyPassed && items.length > 0 ? '本轮没有 LLM 通过的' : '暂无新推荐'}
+          title={onlyPassed && items.length > 0 ? '暂无AI精选商品' : '暂无新推荐'}
           sub={
             onlyPassed && items.length > 0
-              ? `有 ${items.length} 条候选未通过审核，点「全部」查看原因`
+              ? `还有 ${items.length} 条候选商品，可点击「所有候选」查看`
               : '定时任务会按你的条件自动发现新商品'
           }
         />

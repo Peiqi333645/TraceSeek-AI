@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from pathlib import Path
 from datetime import datetime, timezone
 
 from .. import service, notifier
@@ -20,6 +21,18 @@ STATE: dict = {"running": False, "last": None}
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _invalidate_login(settings) -> None:
+    """在线校验失败后清除过期会话，但保留所有业务数据库数据。"""
+    data_dir = Path(settings.data_dir)
+    try:
+        (data_dir / "storage_state.json").unlink()
+    except FileNotFoundError:
+        pass
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / ".logout_marker").write_text(_now_iso(), encoding="utf-8")
+    account.clear()
 
 
 def _notify(session, settings) -> int:
@@ -54,6 +67,10 @@ def crawl(watch_name: str | None = None) -> dict:
         if cfg.paused:
             return {"skipped": "paused"}
         settings = service.effective_settings(cfg)
+        if not Path(settings.data_dir, "storage_state.json").exists():
+            result = {"error": "login_required", "at": _now_iso()}
+            STATE["last"] = result
+            return result
         watches = [service.watchrow_to_watch(w) for w in repo.list_watches(s)]
         if watch_name:                           # 只跑指定条件
             watches = [w for w in watches if w.name == watch_name]
@@ -78,6 +95,7 @@ def crawl(watch_name: str | None = None) -> dict:
                     pass
             check.close()
             if not logged_in:
+                _invalidate_login(settings)
                 if settings.notify_on_login:
                     notifier.send_email(
                         settings, "闲鱼登录已失效",
@@ -120,6 +138,8 @@ def refresh_favorites() -> dict:
         if cfg.paused:
             return {"skipped": "paused"}
         settings = service.effective_settings(cfg)
+        if not Path(settings.data_dir, "storage_state.json").exists():
+            return {"error": "login_required", "at": _now_iso()}
         with browser_session(settings) as ctx:
             drops = service.run_price_monitor(ctx, s, settings)
         notified = _notify(s, settings)

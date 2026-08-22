@@ -35,6 +35,7 @@ button { font-family: inherit; }
 #app[data-s='supabase'] { --bg:#171717; --s1:#1d1d1d; --s2:#242424; --fg:#ededed; --dim:#8b8b8b; --line:#ffffff12; --line2:#ffffff24; --acc:#3ecf8e; --af:#04150c; --soft:#3ecf8e1c; --rad:6px;  --sh:none; }
 #app[data-s='apple']    { --bg:#f5f5f7; --s1:#ffffff; --s2:#f5f5f7; --fg:#1d1d1f; --dim:#6e6e73; --line:#d2d2d7; --line2:#b8b8c0; --acc:#0071e3; --af:#fff;     --soft:#0071e314; --rad:13px; --sh:0 1px 2px #00000010; }
 #app[data-s='sunny']    { --bg:#f8f6ef; --s1:#fffefa; --s2:#f6f1e4; --fg:#242116; --dim:#77715f; --line:#e9e2d1; --line2:#d6c9a8; --acc:#f3b800; --af:#2b2308; --soft:#fff0aa; --rad:14px; --sh:0 8px 26px #6651130d,0 1px 2px #3e32120b; --ok:#19a75a; --warn:#e34b43; }
+#app[data-s='premium']  { --bg:#f3f2ee; --s1:#fff; --s2:#f7f6f2; --fg:#171717; --dim:#77746d; --line:#e7e4dc; --line2:#d4d0c7; --acc:#f4b800; --af:#191400; --soft:#fff2bf; --rad:14px; --sh:0 10px 32px #17130a0b,0 1px 3px #17130a0a; --ok:#168b4e; --warn:#d84a3e; }
 
 /* ============================================================
    顶栏
@@ -205,7 +206,7 @@ button { font-family: inherit; }
 .page-title .count { font-family: 'Geist Mono', monospace; font-size: 13px; color: var(--acc); background: var(--soft); border-radius: 11px; padding: 2px 9px; font-weight: 500; }
 .page-sub { font-size: 13px; color: var(--dim); margin-bottom: 18px; line-height: 1.5; }
 
-/* 段控(仅通过 / 全部) + 右侧「一键 AI 审核」 */
+/* 推荐筛选与排序工具栏 */
 .rec-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .rec-toolbar .rec-filter { margin-bottom: 0; }
 .rec-filter { display: inline-flex; background: var(--s1); border: 1px solid var(--line); border-radius: var(--rad); padding: 3px; margin-bottom: 18px; }
@@ -461,4 +462,67 @@ button { font-family: inherit; }
   .nav .label, .nav .cnt, .collapse .label, .acct .who { display: none; }
   .nav { justify-content: center; padding: 9px 0; gap: 0; }
   .collapse { display: none; }
+}
+
+/* ============================================================
+   TraceSeek Premium · 完整软件视觉
+   ============================================================ */
+#app[data-s='premium'] .top {
+  color:#f7f7f5; background:linear-gradient(180deg,#202020,#171717);
+  border-bottom-color:#2d2d2d; box-shadow:0 8px 30px #00000020;
+}
+.brand-icon { width:31px; height:31px; object-fit:contain; flex:none; }
+#app[data-s='premium'] .logo { font-size:14px; font-weight:700; letter-spacing:.1px; }
+#app[data-s='premium'] .live { color:#aaa; }
+#app[data-s='premium'] .icon-btn { color:#aaa; border-color:#3a3a3a; }
+#app[data-s='premium'] .icon-btn.on { color:#ffc928; background:#ffc92816; }
+#app[data-s='premium'] .run { color:#171717; background:linear-gradient(180deg,#ffd34a,#f3b700); box-shadow:inset 0 1px #fff9,0 6px 18px #0006; font-weight:700; }
+
+#app[data-s='premium'] .side { color:#eee; background:#1b1b1b; border-right-color:#2b2b2b; box-shadow:8px 0 28px #00000012; }
+#app[data-s='premium'] .nav { color:#9f9f9f; border-radius:12px; }
+#app[data-s='premium'] .nav:hover { color:#fff; background:#262626; }
+#app[data-s='premium'] .nav.active { color:#fff; background:linear-gradient(90deg,#302a17,#26241c); border-left-color:#f5bc13; }
+#app[data-s='premium'] .nav.active i { color:#ffc928; }
+#app[data-s='premium'] .nav .cnt { color:#aaa; background:#2a2a2a; }
+#app[data-s='premium'] .collapse { color:#8c8c8c; }
+#app[data-s='premium'] .collapse:hover { color:#fff; background:#262626; }
+#app[data-s='premium'] .acct { color:#eee; border-color:#383838; background:#222; }
+#app[data-s='premium'] .acct:hover { border-color:#5b5131; }
+
+#app[data-auth='0'] { grid-template-columns:1fr; grid-template-rows:56px 1fr; }
+#app[data-auth='0'] .top { grid-column:1; }
+#app[data-auth='0'] .main { grid-column:1; display:grid; place-items:center; padding:32px; background:radial-gradient(circle at 50% 15%,#fff8d9 0,transparent 38%),var(--bg); }
+#app[data-auth='0'] .top .icon-btn, #app[data-auth='0'] .top .run-wrap { display:none; }
+.login-welcome { width:min(470px,100%); padding:46px 42px 40px; text-align:center; border:1px solid var(--line); border-radius:24px; background:#ffffffed; box-shadow:0 30px 80px #2e270f18; backdrop-filter:blur(18px); }
+.welcome-icon { width:92px; height:92px; object-fit:contain; margin-bottom:20px; filter:drop-shadow(0 12px 18px #a8790025); }
+.login-welcome h1 { font-size:25px; letter-spacing:-.6px; margin-bottom:9px; }
+.login-welcome>p { color:var(--dim); font-size:14px; line-height:1.7; margin-bottom:26px; }
+.login-welcome>small { display:block; color:var(--dim); font-size:11.5px; margin-top:18px; }
+.welcome-login { width:100%; height:48px; display:flex; align-items:center; justify-content:center; gap:9px; border:0; border-radius:13px; background:linear-gradient(180deg,#ffd34a,#f3b700); color:#211900; font:700 14px 'Geist','Noto Sans SC',sans-serif; cursor:pointer; box-shadow:inset 0 1px #fff9,0 8px 22px #c8930030; }
+.welcome-login:disabled { opacity:.65; cursor:default; }
+.welcome-qr { display:flex; flex-direction:column; align-items:center; gap:12px; color:var(--dim); font-size:12.5px; }
+.welcome-qr img { width:210px; height:210px; padding:9px; border-radius:16px; background:#fff; border:1px solid var(--line); }
+
+.drop-shortcut { margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; color:#168b4e; background:#e9f7ef; border:1px solid #bee3cc; font-size:12px; font-weight:600; }
+.drop-shortcut:hover { background:#dff3e7; }
+.drop-shortcut b { font-family:'Geist Mono',monospace; }
+.rec-tools { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.sort-select { height:36px; min-width:142px; padding:0 34px 0 12px; border:1px solid var(--line2); border-radius:10px; color:var(--fg); background:var(--s1); font:500 12.5px 'Geist','Noto Sans SC',sans-serif; cursor:pointer; }
+.sort-select:focus { outline:2px solid #f4b80030; border-color:#d5a100; }
+.rec-filter .seg:disabled { opacity:.45; cursor:not-allowed; }
+.list-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:9px; color:var(--dim); font-size:12px; margin:-6px 0 16px; }
+.card.price-dropped { border-color:#77c695; background:linear-gradient(145deg,#f2fcf6,#ffffff 58%); box-shadow:0 10px 28px #168b4e14; }
+.card.price-dropped .rec-price { color:#147a45; }
+.card.price-dropped::before { content:'价格下降'; position:absolute; z-index:2; top:10px; left:10px; padding:4px 9px; border-radius:999px; background:#168b4e; color:#fff; font-size:10.5px; font-weight:700; box-shadow:0 5px 13px #0a613437; }
+.card.price-dropped { position:relative; }
+
+#app[data-s='premium'] .card { border-color:#e3e0d8; }
+#app[data-s='premium'] .card.rec:hover { border-color:#c9bc94; box-shadow:0 18px 42px #4d3a0713; }
+#app[data-s='premium'] .rail { background:#faf9f6; }
+#app[data-s='premium'] .btn-primary { background:linear-gradient(180deg,#ffd34a,#f3b700); }
+
+@media (max-width:760px) {
+  .login-welcome { padding:34px 24px 30px; }
+  .rec-tools { width:100%; justify-content:space-between; }
+  .drop-shortcut { margin-left:0; }
 }

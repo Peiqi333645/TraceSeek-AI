@@ -89,8 +89,8 @@ class AppConfig(Base):
     """单行(id=1)应用配置, 控制台可改。"""
     __tablename__ = "app_config"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    schedule_minutes: Mapped[int] = mapped_column(Integer, default=120)       # 推荐抓取间隔
-    favorites_minutes: Mapped[int] = mapped_column(Integer, default=30)        # 收藏刷新间隔(独立定时)
+    schedule_minutes: Mapped[int] = mapped_column(Integer, default=15)        # 推荐抓取间隔
+    favorites_minutes: Mapped[int] = mapped_column(Integer, default=10)       # 收藏刷新间隔(独立定时)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     min_drop_pct: Mapped[float] = mapped_column(Float, default=5.0)
     min_drop_abs: Mapped[float] = mapped_column(Float, default=50.0)
@@ -111,9 +111,9 @@ class AppConfig(Base):
     billing_access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     billing_account: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 高级(抓取/反爬); 留空/默认即可
-    action_delay_min: Mapped[float] = mapped_column(Float, default=3.0)
-    action_delay_max: Mapped[float] = mapped_column(Float, default=8.0)
-    liveness_max_checks: Mapped[int] = mapped_column(Integer, default=30)
+    action_delay_min: Mapped[float] = mapped_column(Float, default=1.5)
+    action_delay_max: Mapped[float] = mapped_column(Float, default=3.5)
+    liveness_max_checks: Mapped[int] = mapped_column(Integer, default=12)
     search_url: Mapped[str] = mapped_column(String, default="https://www.goofish.com/search")
     favorites_url: Mapped[str] = mapped_column(String, default="https://www.goofish.com/collection")
     # SMTP(控制台可填; 留空则回退系统环境变量)。密码只写不回传。

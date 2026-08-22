@@ -51,14 +51,35 @@ def _account() -> str | None:
         return raw or None
 
 
+def has_session() -> bool:
+    """本地是否保存了可用于闲鱼会话的 Cookie。
+
+    不能只判断 storage_state.json 是否存在：未登录浏览器也能生成空状态文件，
+    那会让前端误以为已经登录。
+    """
+    f = Settings().data_dir / "storage_state.json"
+    if not f.exists():
+        return False
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        cookies = data.get("cookies", [])
+    except Exception:
+        return False
+    names = {str(c.get("name", "")) for c in cookies}
+    # 淘宝/闲鱼常见登录 Cookie。命中任意一个只代表有已保存会话，真正有效性
+    # 仍由每轮抓取访问首页验证。
+    return bool(names & {"cookie2", "unb", "tracknick", "lgc", "_tb_token_", "munb"})
+
+
 def status() -> dict:
     """给前端: 登录流程状态 + 是否已有登录态 + 闲鱼昵称。"""
-    state_file = Settings().data_dir / "storage_state.json"
+    authenticated = has_session()
     return {
         "status": STATE["status"],
         "qr": STATE["qr"],
         "message": STATE["message"],
-        "has_state": state_file.exists(),
+        "has_state": authenticated,
+        "authenticated": authenticated,
         "account": _account(),
         "avatar": account.avatar(),
     }
