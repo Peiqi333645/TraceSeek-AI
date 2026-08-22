@@ -267,17 +267,17 @@ export default function App() {
             <img className="welcome-icon" src="/brand-icon.png" alt="寻迹AI助手" />
             <h1>欢迎使用寻迹AI助手</h1>
             <p>登录闲鱼账号后，才能使用推荐、收藏监控和条件设置。</p>
-            <div className="login-methods" aria-label="支持的登录方式">
-              <span><i className="ti ti-scan" /> 扫码登录</span>
-              <span><i className="ti ti-message" /> 短信登录</span>
-              <span><i className="ti ti-user" /> 账号登录</span>
-            </div>
-            {['starting', 'waiting', 'scanned'].includes(login.status) ? (
-              <div className="login-opening"><span className="spinner" />{login.message || '请在弹出的闲鱼官方窗口完成登录…'}</div>
+            {login.qr ? (
+              <div className="welcome-qr">
+                <img src={login.qr} alt="闲鱼登录二维码" />
+                <span>{login.message || '请使用闲鱼 App 扫码并在手机确认'}</span>
+              </div>
+            ) : ['starting', 'waiting', 'scanned'].includes(login.status) ? (
+              <div className="login-opening"><span className="spinner" />{login.message || '正在生成登录二维码…'}</div>
             ) : (
               <button className="welcome-login" onClick={startLogin} disabled={['starting', 'scanned'].includes(login.status)}>
-                <i className="ti ti-login" />
-                打开闲鱼官方登录
+                <i className="ti ti-scan" />
+                扫码登录闲鱼
               </button>
             )}
             {['expired', 'failed', 'busy'].includes(login.status) && <div className="login-error">{login.message}</div>}

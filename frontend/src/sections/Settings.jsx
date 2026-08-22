@@ -63,7 +63,7 @@ export default function Settings({ status }) {
     </Card>
 
     <Card className="form-card premium-card">
-      <div className="card-heading"><span className="card-icon"><i className="ti ti-user-check" /></span><div><div className="form-title">账号登录</div><p>打开闲鱼官方页面，可选择扫码、短信或账号登录；登录信息仅保存在本机。</p></div></div>
+      <div className="card-heading"><span className="card-icon"><i className="ti ti-user-check" /></span><div><div className="form-title">账号登录</div><p>使用手机闲鱼扫码登录，登录信息仅保存在本机。</p></div></div>
       {loggingIn ? <div className="qr-wrap"><div className="spinner" /><div className="qr-tip">{login.message || '正在打开登录页面…'}</div></div>
         : login.qr ? <div className="qr-wrap"><img className="qr-img" src={login.qr} alt="登录二维码" /><div className="qr-tip">打开手机闲鱼扫一扫，然后确认登录</div></div>
         : <div className="login-row clean-login">
@@ -71,7 +71,7 @@ export default function Settings({ status }) {
           {['expired', 'failed', 'busy'].includes(login.status) && <span className="test-err">{login.message}</span>}
           <div className="grow" />
           {login.has_state && <Button variant="ghost" onClick={() => setConfirmLogout(true)} disabled={busy}>退出账号</Button>}
-          <Button onClick={startLogin} disabled={busy}>{login.has_state ? '重新登录' : '打开官方登录'}</Button>
+          <Button onClick={startLogin} disabled={busy}>{login.has_state ? '重新登录' : '扫码登录'}</Button>
         </div>}
     </Card>
 
