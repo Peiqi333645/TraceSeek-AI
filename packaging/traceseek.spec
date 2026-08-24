@@ -10,10 +10,18 @@
 import os
 import sys
 
-import xianyu_crawler
 from PyInstaller.utils.hooks import collect_all
 
-PKG_DIR = os.path.dirname(xianyu_crawler.__file__)
+# 不通过 ``xianyu_crawler.__file__`` 定位源码。GitHub Actions 的可编辑安装
+# 在部分 Python/pip 组合下会先把它解析为 namespace package，此时 __file__
+# 为 None，os.path.dirname(None) 会直接让 macOS/Windows 打包失败。
+# spec 固定位于 <repo>/packaging，因此直接从仓库结构解析最稳定。
+REPO_DIR = os.path.abspath(os.path.join(SPECPATH, ".."))
+SRC_DIR = os.path.join(REPO_DIR, "src")
+PKG_DIR = os.path.join(SRC_DIR, "xianyu_crawler")
+
+if not os.path.isfile(os.path.join(PKG_DIR, "launcher.py")):
+    raise FileNotFoundError(f"找不到桌面入口文件: {os.path.join(PKG_DIR, 'launcher.py')}")
 
 datas, binaries, hiddenimports = [], [], []
 # 这些包有数据文件/动态导入/原生驱动
@@ -46,7 +54,7 @@ elif sys.platform.startswith("win"):   # WebView2 走 pythonnet
 
 a = Analysis(
     [os.path.join(PKG_DIR, "launcher.py")],
-    pathex=[os.path.dirname(PKG_DIR)],
+    pathex=[SRC_DIR],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
