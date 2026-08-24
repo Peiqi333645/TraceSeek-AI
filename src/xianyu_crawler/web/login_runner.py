@@ -25,6 +25,10 @@ _TIMEOUT_S = 180               # 二维码等待上限
 STATE: dict = {"status": "idle", "qr": None, "message": "", "at": None}
 _LOGIN_GENERATION = 0
 
+# 只有这些账号级 Cookie 才能证明手机端已经完成确认登录。
+# `_tb_token_` 等游客访问也会生成，不能用来判断登录成功。
+_ACCOUNT_COOKIE_NAMES = {"cookie2", "unb", "tracknick", "lgc", "munb"}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -67,9 +71,8 @@ def has_session() -> bool:
     except Exception:
         return False
     names = {str(c.get("name", "")) for c in cookies}
-    # 淘宝/闲鱼常见登录 Cookie。命中任意一个只代表有已保存会话，真正有效性
-    # 仍由每轮抓取访问首页验证。
-    return bool(names & {"cookie2", "unb", "tracknick", "lgc", "_tb_token_", "munb"})
+    # 淘宝/闲鱼账号级 Cookie。真正有效性仍由每轮抓取访问首页验证。
+    return bool(names & _ACCOUNT_COOKIE_NAMES)
 
 
 def status() -> dict:
@@ -103,6 +106,15 @@ def start() -> dict:
 def _logged_in(url: str) -> bool:
     u = url.lower()
     return "login" not in u and "passport" not in u and "sign" not in u
+
+
+def _has_account_cookie(ctx) -> bool:
+    """手机确认后页面可能不跳转；直接检查浏览器上下文中的账号 Cookie。"""
+    try:
+        names = {str(cookie.get("name", "")) for cookie in ctx.cookies()}
+    except Exception:
+        return False
+    return bool(names & _ACCOUNT_COOKIE_NAMES)
 
 
 # 二维码被手机扫过、等待手机端点「确认」时, passport iframe 里会出现这些字样
@@ -156,7 +168,9 @@ def _run(generation: int) -> None:
                 if generation != _LOGIN_GENERATION:
                     STATE.update(status="idle", qr=None, message="已退出登录", at=_now())
                     return
-                if _logged_in(page.url):
+                # 新版登录页在手机确认后可能仍停留在 /login。此时账号 Cookie
+                # 已写入浏览器上下文，必须同时检测 Cookie，不能只等待 URL 跳转。
+                if _logged_in(page.url) or _has_account_cookie(ctx):
                     ok = True
                     break
                 frame = next((f for f in page.frames
