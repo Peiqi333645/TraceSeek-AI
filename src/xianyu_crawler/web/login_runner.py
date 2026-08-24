@@ -20,6 +20,7 @@ from . import account, runner          # account: 头像缓存; runner: 复用�
 
 LOGIN_URL = "https://www.goofish.com/login"
 _TIMEOUT_S = 180               # 二维码等待上限
+_QR_READY_TIMEOUT_S = 30       # 登录页打开后，最多等待二维码渲染的时间
 
 # 前端轮询读这里: status=idle|starting|waiting|success|expired|failed|busy
 STATE: dict = {"status": "idle", "qr": None, "message": "", "at": None}
@@ -91,7 +92,7 @@ def status() -> dict:
 
 def start() -> dict:
     """启动扫码登录流程(后台线程)。已在进行中/抓取占用则不重入。"""
-    if STATE["status"] in ("starting", "waiting"):
+    if STATE["status"] in ("starting", "waiting", "scanned"):
         return {"status": STATE["status"]}
     if not runner._LOCK.acquire(blocking=False):
         return {"status": "busy", "message": "正在抓取，请稍后再试"}
@@ -130,6 +131,48 @@ def _is_scanned(frame) -> bool:
     return any(h in txt for h in _SCAN_HINTS)
 
 
+_QR_SELECTORS = (
+    "[class*='qrcode' i] canvas",
+    "[class*='qr-code' i] canvas",
+    "[class*='qrcode' i] img",
+    "[class*='qr-code' i] img",
+    "img[alt*='二维码']",
+    "img[alt*='扫码']",
+    "img[src*='qrcode' i]",
+    "img[src*='qrCode' i]",
+    "canvas",
+)
+
+
+def _capture_qr(page) -> str | None:
+    """从主页和所有 iframe 中捕获二维码。
+
+    登录页会改变 iframe URL 和二维码标签，不能只依赖某个
+    passport iframe 中的 canvas。
+    """
+    for frame in page.frames:
+        for selector in _QR_SELECTORS:
+            try:
+                locators = frame.locator(selector)
+                for index in range(min(locators.count(), 6)):
+                    node = locators.nth(index)
+                    if not node.is_visible(timeout=250):
+                        continue
+                    box = node.bounding_box(timeout=500)
+                    if not box:
+                        continue
+                    width, height = float(box["width"]), float(box["height"])
+                    if min(width, height) < 100 or max(width, height) > 520:
+                        continue
+                    if abs(width - height) > max(width, height) * 0.35:
+                        continue
+                    png = node.screenshot(type="png", timeout=2500)
+                    return "data:image/png;base64," + base64.b64encode(png).decode()
+            except Exception:
+                continue
+    return None
+
+
 def logout() -> dict:
     """退出登录 / 换号: 删除 storage_state.json 并重置流程状态。"""
     global _LOGIN_GENERATION
@@ -158,10 +201,11 @@ def _run(generation: int) -> None:
             ctx = browser.new_context(
                 locale="zh-CN", user_agent=prof["user_agent"], viewport=prof["viewport"])
             page = ctx.new_page()
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(700)
-            STATE.update(status="waiting", message="请使用手机闲鱼 App 扫码登录")
+            STATE.update(status="waiting", message="正在读取官方登录二维码…")
             deadline = time.time() + _TIMEOUT_S
+            qr_deadline = time.time() + _QR_READY_TIMEOUT_S
             ok = False
             scanned = False
             while time.time() < deadline:
@@ -173,18 +217,24 @@ def _run(generation: int) -> None:
                 if _logged_in(page.url) or _has_account_cookie(ctx):
                     ok = True
                     break
-                frame = next((f for f in page.frames
-                              if "mini_login" in f.url or "passport" in f.url), None)
-                if not scanned and frame is not None and _is_scanned(frame):
+                scanned_frame = next((f for f in page.frames if _is_scanned(f)), None)
+                if not scanned and scanned_frame is not None:
                     scanned = True                     # 已扫码, 等手机端确认 → 给前端"登录中"
                     STATE.update(status="scanned", qr=None,
                                  message="扫码成功，请在手机点「确认登录」…")
-                if not scanned and frame is not None:
-                    try:                               # 截二维码(passport iframe 里的 canvas)
-                        png = frame.locator("canvas").first.screenshot(timeout=3000)
-                        STATE["qr"] = "data:image/png;base64," + base64.b64encode(png).decode()
-                    except Exception:
-                        pass                           # 二维码暂不可用/刷新中, 下轮再试
+                if not scanned and not STATE.get("qr"):
+                    qr = _capture_qr(page)
+                    if qr:
+                        STATE.update(status="waiting", qr=qr,
+                                     message="请使用手机闲鱼 App 扫码登录")
+                    elif time.time() >= qr_deadline:
+                        STATE.update(
+                            status="failed",
+                            qr=None,
+                            message="未能读取登录二维码，请检查网络后点击重试",
+                            at=_now(),
+                        )
+                        return
                 page.wait_for_timeout(500)             # 更快反馈扫码与确认状态
             if ok:
                 if generation != _LOGIN_GENERATION:
