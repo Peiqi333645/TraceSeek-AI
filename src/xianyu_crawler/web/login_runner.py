@@ -189,6 +189,18 @@ def _capture_qr(page) -> str | None:
     return None
 
 
+def _clear_browser_login(ctx, page) -> None:
+    """清掉本轮浏览器里可能继承/自动恢复的旧账号凭据。"""
+    try:
+        ctx.clear_cookies()
+    except Exception:
+        pass
+    try:
+        page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+    except Exception:
+        pass
+
+
 def logout() -> dict:
     """退出登录 / 换号: 删除 storage_state.json 并重置流程状态。"""
     global _LOGIN_GENERATION
@@ -219,6 +231,8 @@ def _run(generation: int) -> None:
             ctx = browser.new_context(
                 locale="zh-CN", user_agent=prof["user_agent"], viewport=prof["viewport"])
             page = ctx.new_page()
+            # 扫码窗口永远从无账号状态开始，不能继承上一位用户。
+            _clear_browser_login(ctx, page)
             page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(700)
             STATE.update(status="waiting", message="正在读取官方登录二维码…")
@@ -226,13 +240,36 @@ def _run(generation: int) -> None:
             qr_deadline = time.time() + _QR_READY_TIMEOUT_S
             ok = False
             scanned = False
+            qr_was_shown = False
+            stale_session_resets = 0
             while time.time() < deadline:
                 if generation != _LOGIN_GENERATION:
                     STATE.update(status="idle", qr=None, message="已退出登录", at=_now())
                     return
                 # 新版登录页在手机确认后可能仍停留在 /login。此时账号 Cookie
                 # 已写入浏览器上下文，必须同时检测 Cookie，不能只等待 URL 跳转。
-                if _logged_in(page.url) or _has_account_cookie(ctx):
+                detected_account = _logged_in(page.url) or _has_account_cookie(ctx)
+                # 安全约束：本轮没有先展示二维码，就不能把旧账号自动跳转
+                # 当成登录成功。清掉旧会话并重新回到登录页。
+                if detected_account and not qr_was_shown:
+                    stale_session_resets += 1
+                    _clear_browser_login(ctx, page)
+                    STATE.update(status="starting", qr=None,
+                                 message="已清除上一个账号，正在生成新二维码…")
+                    page.goto(
+                        f"{LOGIN_URL}?forceLogin=true&_={int(time.time() * 1000)}",
+                        wait_until="domcontentloaded",
+                        timeout=30000,
+                    )
+                    page.wait_for_timeout(700)
+                    qr_deadline = time.time() + _QR_READY_TIMEOUT_S
+                    if stale_session_resets >= 3:
+                        STATE.update(status="failed", qr=None,
+                                     message="旧账号会话未能清除，请退出软件后重试",
+                                     at=_now())
+                        return
+                    continue
+                if detected_account and qr_was_shown:
                     ok = True
                     break
                 scanned_frame = next((f for f in page.frames if _is_scanned(f)), None)
@@ -243,6 +280,7 @@ def _run(generation: int) -> None:
                 if not scanned and not STATE.get("qr"):
                     qr = _capture_qr(page)
                     if qr:
+                        qr_was_shown = True
                         STATE.update(status="waiting", qr=qr,
                                      message="请使用手机闲鱼 App 扫码登录")
                     elif time.time() >= qr_deadline:
