@@ -99,7 +99,7 @@ class AppConfig(Base):
     search_max_pages: Mapped[int] = mapped_column(Integer, default=3)
     favorites_max_pages: Mapped[int] = mapped_column(Integer, default=5)
     # LLM 二次审核(控制台可改; token 只写不回传, 留空回退环境变量)
-    review_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    review_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # 空 → 回退本地 data/secret.env 的 XIANYU_REVIEW_BASE_URL(接口地址不入仓库)
     review_base_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     review_model: Mapped[str] = mapped_column(String, default="doubao-seed-2.0-pro")
@@ -108,8 +108,6 @@ class AppConfig(Base):
     review_temperature: Mapped[float] = mapped_column(Float, default=0.0)
     review_max_tokens: Mapped[int] = mapped_column(Integer, default=2000)
     review_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 空=用默认
-    billing_access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    billing_account: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 高级(抓取/反爬); 留空/默认即可
     action_delay_min: Mapped[float] = mapped_column(Float, default=1.5)
     action_delay_max: Mapped[float] = mapped_column(Float, default=3.5)

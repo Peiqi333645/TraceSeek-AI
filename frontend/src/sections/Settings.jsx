@@ -5,17 +5,16 @@ import { Card, Button, Spinner, Toggle, Field, ConfirmDialog } from '../componen
 export default function Settings({ status }) {
   const [cfg, setCfg] = useState(null)
   const [login, setLogin] = useState({ status: 'idle', has_state: false })
-  const [billing, setBilling] = useState({ active: false, balance: 0 })
+  const [apiToken, setApiToken] = useState('')
+  const [aiResult, setAiResult] = useState(null)
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const timer = useRef(null)
 
   useEffect(() => {
-    // 核心设置和登录状态先显示；额度服务慢或离线时不阻塞整个页面。
     api.config().then(setCfg)
     api.loginStatus().then(setLogin)
-    api.billingStatus().then(setBilling).catch(() => {})
     return () => clearInterval(timer.current)
   }, [])
 
@@ -23,9 +22,34 @@ export default function Settings({ status }) {
   const save = async () => {
     setBusy(true)
     try {
-      setCfg(await api.saveConfig(cfg)); setSaved(true)
+      const body = { ...cfg }
+      if (apiToken.trim()) body.review_api_token = apiToken.trim()
+      setCfg(await api.saveConfig(body)); setApiToken(''); setSaved(true)
       setTimeout(() => setSaved(false), 1800)
     } finally { setBusy(false) }
+  }
+  const saveAndTestAi = async () => {
+    setBusy(true); setAiResult(null)
+    try {
+      const body = { ...cfg }
+      if (apiToken.trim()) body.review_api_token = apiToken.trim()
+      const next = await api.saveConfig(body)
+      setCfg(next); setApiToken('')
+      const result = await api.testReview()
+      setAiResult(result?.ok ? { ok: true, text: '连接成功，可以使用 AI 辅助审核。' } : { ok: false, text: result?.error || '连接失败，请检查接口地址、模型和密钥。' })
+    } catch (error) {
+      setAiResult({ ok: false, text: error?.message || '连接失败，请稍后重试。' })
+    } finally { setBusy(false) }
+  }
+  const chooseProvider = (provider) => {
+    const presets = {
+      deepseek: ['https://api.deepseek.com/v1', 'deepseek-chat'],
+      qwen: ['https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'],
+      doubao: ['https://ark.cn-beijing.volces.com/api/v3', ''],
+    }
+    if (presets[provider]) {
+      setCfg((current) => ({ ...current, review_base_url: presets[provider][0], review_model: presets[provider][1] }))
+    }
   }
   const startLogin = async () => {
     setLogin((current) => ({ ...current, status: 'starting', qr: null, message: '正在打开登录页面…' }))
@@ -41,25 +65,40 @@ export default function Settings({ status }) {
     setConfirmLogout(false); setBusy(true); clearInterval(timer.current)
     try { setLogin(await api.logout()) } finally { setBusy(false) }
   }
-  const recharge = () => billing.checkout_url
-    ? window.open(billing.checkout_url, '_blank', 'noreferrer')
-    : window.alert('在线充值正在配置，请联系销售人员开通额度。')
   const loggingIn = ['starting', 'scanned'].includes(login.status) || (login.status === 'waiting' && !login.qr)
 
   if (!cfg) return <Spinner />
   return <section className="settings-simple">
     <div className="settings-head">
-      <div><h1 className="page-title">使用设置</h1><p className="page-sub">完成登录并设置刷新时间，其余服务已经为你配置好。</p></div>
-      <span className="managed-badge"><i className="ti ti-shield-check" /> 智能托管已开启</span>
+      <div><h1 className="page-title">使用设置</h1><p className="page-sub">完成账号登录、刷新提醒和可选的 AI 设置即可使用。</p></div>
+      <span className="managed-badge"><i className="ti ti-shield-check" /> 访问节奏保护已开启</span>
     </div>
 
-    <Card className="form-card billing-card premium-card">
-      <div className="card-heading"><span className="card-icon green"><i className="ti ti-sparkles" /></span><div><div className="form-title">AI 智能分析</div><p>自动筛选符合要求的商品，无需设置接口或模型。</p></div></div>
-      <div className="balance-row">
-        <div className="balance-box"><span>剩余分析额度</span><b>{billing.offline ? '--' : Number(billing.balance || 0).toLocaleString('zh-CN')}</b><small>次</small></div>
-        <div className="quota-copy"><b>{billing.active ? '服务正常' : '等待开通'}</b><span>额度不足时充值即可继续使用</span></div>
-        <Button onClick={recharge}>立即充值</Button>
+    <Card className="form-card ai-config-card premium-card">
+      <div className="card-heading"><span className="card-icon green"><i className="ti ti-sparkles" /></span><div><div className="form-title">AI 辅助审核（可选）</div><p>使用您自己的 DeepSeek、豆包、通义千问或兼容接口；不开启也能正常监控。</p></div></div>
+      <div className="form-row ai-enable-row">
+        <Toggle checked={cfg.review_enabled} onChange={(v) => set('review_enabled', v)} label="启用 AI 辅助审核" />
+        <span className="grow" />
+        <span className={cfg.review_token_set ? 'login-state on' : 'login-state'}>{cfg.review_token_set ? '✓ 已保存密钥' : '○ 尚未填写密钥'}</span>
       </div>
+      {cfg.review_enabled && <>
+        <div className="provider-row">
+          <span>快速选择：</span>
+          <Button variant="ghost" onClick={() => chooseProvider('deepseek')}>DeepSeek</Button>
+          <Button variant="ghost" onClick={() => chooseProvider('doubao')}>豆包</Button>
+          <Button variant="ghost" onClick={() => chooseProvider('qwen')}>通义千问</Button>
+        </div>
+        <div className="form-grid simple-grid ai-api-grid">
+          <Field label="API 接口地址" hint="从模型服务商控制台复制"><input value={cfg.review_base_url || ''} onChange={(e) => set('review_base_url', e.target.value)} placeholder="https://.../v1" /></Field>
+          <Field label="模型名称" hint="豆包请填写推理接入点 ID"><input value={cfg.review_model || ''} onChange={(e) => set('review_model', e.target.value)} placeholder="例如 deepseek-chat" /></Field>
+          <Field label="API 密钥" hint={cfg.review_token_set ? '留空表示继续使用已保存的密钥' : '密钥仅保存在本机'}><input type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder={cfg.review_token_set ? '已保存，无需重复填写' : '请输入 API Key'} /></Field>
+        </div>
+        <div className="form-row">
+          {aiResult && <span className={aiResult.ok ? 'saved-hint' : 'test-err'}>{aiResult.ok ? '✓ ' : '✕ '}{aiResult.text}</span>}
+          <div className="grow" />
+          <Button onClick={saveAndTestAi} disabled={busy}>{busy ? '正在测试…' : '保存并测试连接'}</Button>
+        </div>
+      </>}
     </Card>
 
     <Card className="form-card premium-card">
@@ -93,8 +132,8 @@ export default function Settings({ status }) {
     </Card>
 
     <Card className="service-strip">
-      <div><span className="service-dot on" /><b>智能筛选</b><small>已托管</small></div>
-      <div><span className="service-dot on" /><b>安全访问</b><small>自动维护</small></div>
+      <div><span className={cfg.review_enabled ? 'service-dot on' : 'service-dot'} /><b>AI 辅助</b><small>{cfg.review_enabled ? '已开启' : '未开启'}</small></div>
+      <div><span className="service-dot on" /><b>访问节奏保护</b><small>自动开启</small></div>
       <div><span className={cfg.notify_to ? 'service-dot on' : 'service-dot'} /><b>消息提醒</b><small>{cfg.notify_to ? '已开启' : '待填写邮箱'}</small></div>
       <div><span className={status?.running ? 'service-dot busy' : 'service-dot on'} /><b>运行状态</b><small>{status?.running ? '正在执行' : '准备就绪'}</small></div>
     </Card>

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from . import runtime, runner, dto, login_runner
-from .. import service, notifier, review, billing
+from .. import service, notifier, review
 from ..config import Settings
 from ..storage import repo
 
@@ -79,28 +79,6 @@ def api_put_config(body: dto.ConfigIn, _: None = Depends(require_login), s: Sess
     except Exception:
         pass
     return dto.config_to_out(cfg)
-
-
-@app.get("/api/billing/status")
-def api_billing_status(_: None = Depends(require_login), s: Session = Depends(get_db)):
-    cfg = repo.get_config(s)
-    return billing.account(Settings(), cfg.billing_access_token)
-
-
-@app.post("/api/billing/activate")
-def api_billing_activate(body: dto.ActivationIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
-    result = billing.activate(Settings(), body.code)
-    if result.get("ok"):
-        token = str(result.pop("access_token"))
-        account = str(result.get("account") or "")
-        base = Settings().billing_base_url
-        repo.update_config(
-            s, billing_access_token=token, billing_account=account,
-            review_base_url=base.rstrip("/") + "/v1" if base else None,
-            review_api_token=token,
-            review_model=str(result.get("model") or "smart-review"),
-        )
-    return result
 
 
 @app.post("/api/test-email")

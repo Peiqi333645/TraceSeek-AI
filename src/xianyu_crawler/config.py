@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # 二次审核(LLM 相关性过滤) — 任意 OpenAI 兼容接口。
     # 具体接口地址/密钥放本地 data/secret.env(XIANYU_REVIEW_BASE_URL / XIANYU_REVIEW_API_TOKEN),
     # 不写进仓库; 这里只给通用占位默认。
-    review_enabled: bool = True
+    review_enabled: bool = False
     review_base_url: str = "https://api.openai.com/v1"
     review_model: str = "doubao-seed-2.0-pro"
     review_api_token: str | None = None
@@ -67,8 +67,6 @@ class Settings(BaseSettings):
     review_temperature: float = 0.0
     review_max_tokens: int = 4000         # 推理模型要先思考再出 JSON, 额度太小会导致正文(content)为空
     review_system_prompt: str = DEFAULT_REVIEW_SYSTEM_PROMPT
-    # 商业版统一网关。由运营方通过 XIANYU_BILLING_BASE_URL 注入；上游主密钥不进入客户端。
-    billing_base_url: str | None = None
     # 死链探测: 每轮最多对多少条待审推荐打开详情页核活(防止单轮太久)
     liveness_max_checks: int = 12
     # 密钥(系统环境变量): XIANYU_SMTP_HOST/PORT/USER/PASS, XIANYU_NOTIFY_TO

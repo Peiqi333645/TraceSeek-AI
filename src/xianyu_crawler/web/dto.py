@@ -108,10 +108,6 @@ class ConfigOut(BaseModel):
     notify_on_login: bool = True
 
 
-class ActivationIn(BaseModel):
-    code: str
-
-
 class RecommendationOut(BaseModel):
     item_id: str
     title: str
