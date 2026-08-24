@@ -29,6 +29,11 @@ _LOGIN_GENERATION = 0
 # 只有这些账号级 Cookie 才能证明手机端已经完成确认登录。
 # `_tb_token_` 等游客访问也会生成，不能用来判断登录成功。
 _ACCOUNT_COOKIE_NAMES = {"cookie2", "unb", "tracknick", "lgc", "munb"}
+_LOGGED_OUT_FILE = ".logged_out"
+
+
+def _logged_out_path() -> Path:
+    return Settings().data_dir / _LOGGED_OUT_FILE
 
 
 def _now() -> str:
@@ -63,6 +68,10 @@ def has_session() -> bool:
     不能只判断 storage_state.json 是否存在：未登录浏览器也能生成空状态文件，
     那会让前端误以为已经登录。
     """
+    # 用户明确点过“退出账号”后，即使某个尚未结束的旧浏览器线程意外把
+    # Cookie 文件写了回来，也必须保持未登录，直到下一次扫码真正成功。
+    if _logged_out_path().exists():
+        return False
     f = Settings().data_dir / "storage_state.json"
     if not f.exists():
         return False
@@ -99,6 +108,13 @@ def start() -> dict:
     global _LOGIN_GENERATION
     _LOGIN_GENERATION += 1
     generation = _LOGIN_GENERATION
+    # 明确退出后的重新登录必须从全新的无 Cookie 浏览器上下文开始。
+    # 收藏、推荐和条件设置存放在数据库中，不会受此操作影响。
+    if _logged_out_path().exists():
+        try:
+            (Settings().data_dir / "storage_state.json").unlink()
+        except FileNotFoundError:
+            pass
     STATE.update(status="starting", qr=None, message="正在生成登录二维码…", at=_now())
     threading.Thread(target=_run, args=(generation,), daemon=True).start()
     return {"status": "starting"}
@@ -185,6 +201,8 @@ def logout() -> dict:
         pass
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(_now(), encoding="utf-8")
+    # 权威的“用户已退出”标志。它能阻止任何残留/并发会话让软件自动登录。
+    _logged_out_path().write_text(_now(), encoding="utf-8")
     account.clear()
     STATE.update(status="idle", qr=None, message="已退出登录", at=_now())
     return status()
@@ -241,6 +259,11 @@ def _run(generation: int) -> None:
                     return
                 Path(state_path).parent.mkdir(parents=True, exist_ok=True)
                 ctx.storage_state(path=state_path)
+                # 只有本轮全新扫码成功后，才允许恢复为已登录状态。
+                try:
+                    _logged_out_path().unlink()
+                except FileNotFoundError:
+                    pass
                 STATE.update(status="success", qr=None, message="登录成功，已保存登录态", at=_now())
             else:
                 STATE.update(status="expired", qr=None, message="二维码超时，请重试", at=_now())

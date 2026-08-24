@@ -22,7 +22,8 @@ def browser_session(settings, state_path: str | None = None):
     """
     if state_path is None:
         state_path = str(Path(settings.data_dir) / "storage_state.json")
-    had_saved_state = Path(state_path).exists()
+    logged_out_file = Path(settings.data_dir) / ".logged_out"
+    had_saved_state = Path(state_path).exists() and not logged_out_file.exists()
     # 若用户在抓取过程中点击退出，退出标记会改变；旧浏览器会话不得在 finally
     # 中把 cookie 写回来，否则表现为“退出后自动登录”。
     logout_marker = Path(settings.data_dir) / ".logout_marker"
@@ -34,7 +35,7 @@ def browser_session(settings, state_path: str | None = None):
             args=["--disable-blink-features=AutomationControlled"],   # 降低被识别为自动化
         )
         ctx = browser.new_context(
-            storage_state=state_path if Path(state_path).exists() else None,
+            storage_state=state_path if had_saved_state else None,
             user_agent=profile["user_agent"],
             viewport=profile["viewport"],
             locale="zh-CN",
