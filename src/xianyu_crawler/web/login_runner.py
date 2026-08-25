@@ -28,7 +28,9 @@ _LOGIN_GENERATION = 0
 
 # 只有这些账号级 Cookie 才能证明手机端已经完成确认登录。
 # `_tb_token_` 等游客访问也会生成，不能用来判断登录成功。
-_ACCOUNT_COOKIE_NAMES = {"cookie2", "unb", "tracknick", "lgc", "munb"}
+# cookie2 在新版登录页的访客状态下也可能出现，不能证明账号已登录。
+# 只使用明确包含账号身份的 Cookie，避免未扫码就被误判为成功。
+_ACCOUNT_COOKIE_NAMES = {"unb", "tracknick", "lgc", "munb"}
 _LOGGED_OUT_FILE = ".logged_out"
 
 
@@ -248,10 +250,13 @@ def _run(generation: int) -> None:
                     return
                 # 新版登录页在手机确认后可能仍停留在 /login。此时账号 Cookie
                 # 已写入浏览器上下文，必须同时检测 Cookie，不能只等待 URL 跳转。
-                detected_account = _logged_in(page.url) or _has_account_cookie(ctx)
+                # 登录页本身也可能提前写入 cookie2 等访客 Cookie。在二维码尚未
+                # 展示前，不能用 Cookie 判断旧账号，否则会反复清理并误报失败。
+                # 此阶段只在页面真的离开登录地址时，才视为旧账号自动恢复。
+                auto_restored_old_account = _logged_in(page.url)
                 # 安全约束：本轮没有先展示二维码，就不能把旧账号自动跳转
                 # 当成登录成功。清掉旧会话并重新回到登录页。
-                if detected_account and not qr_was_shown:
+                if auto_restored_old_account and not qr_was_shown:
                     stale_session_resets += 1
                     _clear_browser_login(ctx, page)
                     STATE.update(status="starting", qr=None,
@@ -269,7 +274,8 @@ def _run(generation: int) -> None:
                                      at=_now())
                         return
                     continue
-                if detected_account and qr_was_shown:
+                # 二维码已经展示后，才允许通过账号 Cookie 判断手机确认成功。
+                if qr_was_shown and (_logged_in(page.url) or _has_account_cookie(ctx)):
                     ok = True
                     break
                 scanned_frame = next((f for f in page.frames if _is_scanned(f)), None)
