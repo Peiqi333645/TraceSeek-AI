@@ -45,6 +45,9 @@ COLUMNS: list[tuple[str, str, str]] = [
     ("app_config", "notify_on_login", "BOOLEAN NOT NULL DEFAULT 1"),
     ("app_config", "notify_on_new", "BOOLEAN NOT NULL DEFAULT 1"),
     ("app_config", "notify_on_sold", "BOOLEAN NOT NULL DEFAULT 1"),
+    ("app_config", "deep_search_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("app_config", "deep_search_interval_seconds", "REAL NOT NULL DEFAULT 300"),
+    ("app_config", "deep_search_cursor_page", "INTEGER NOT NULL DEFAULT 6"),
 ]
 
 

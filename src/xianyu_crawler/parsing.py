@@ -36,7 +36,11 @@ def to_price(v: object) -> float | None:
     if v is None or isinstance(v, (list, dict, bool)):
         return None
     try:
-        return float(str(v).replace("¥", "").replace(",", "").strip())
+        text = str(v).replace("¥", "").replace("￥", "").replace(",", "").strip()
+        multiplier = 10000 if text.endswith("万") else 1
+        if multiplier != 1:
+            text = text[:-1].strip()
+        return float(text) * multiplier
     except (ValueError, TypeError):
         return None
 

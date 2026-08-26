@@ -32,8 +32,9 @@ def parse_search_json(raw: dict) -> list[Item]:
         args = (main.get("clickParam") or {}).get("args") or {}
         iid = ex.get("itemId") or dp.get("itemId") or args.get("item_id")
         title = ex.get("title") or dp.get("title")
-        # 精确价用 soldPrice/args.price; exContent.price 是 "¥2.89万" 样式串, 不可用
-        price = to_price(dp.get("soldPrice") or args.get("price") or args.get("displayPrice"))
+        # 不同搜索卡片的价格字段并不统一；to_price 同时支持 "¥2.89万"。
+        price = to_price(dp.get("soldPrice") or args.get("price") or args.get("displayPrice")
+                         or ex.get("price") or dp.get("price") or ex.get("priceText"))
         if not iid or not title or price is None or str(iid) in seen:
             continue
         seen.add(str(iid))
@@ -60,7 +61,13 @@ def parse_search_json(raw: dict) -> list[Item]:
     return out
 
 
-def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL) -> list[Item]:
+def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
+           start_page: int = 1, progress=None, cancelled=None) -> list[Item]:
+    """搜索连续页面。
+
+    ``start_page=1, max_pages=5`` 读取 1–5 页；``start_page=6`` 读取 6–10 页。
+    闲鱼网页使用滚动懒加载，因此深页仍需从顶部滚动到目标页，但只解析目标区间。
+    """
     captured: list[dict] = []
     page = ctx.new_page()
 
@@ -76,33 +83,41 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL) 
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
         # 不再固定空等 4 秒：接口一返回就继续，慢网最多等 3.5 秒。
-        for _ in range(35):
+        for _ in range(50):
             if captured:
                 break
+            if cancelled and cancelled():
+                return []
             page.wait_for_timeout(100)
         n = len(captured)
-        for _ in range(max(0, max_pages - 1)):
+        start_page = max(1, int(start_page))
+        max_pages = max(1, int(max_pages))
+        end_page = start_page + max_pages - 1
+        if progress:
+            progress(1, end_page)
+        for page_no in range(2, end_page + 1):
+            if cancelled and cancelled():
+                break
             if captured and not _has_next_page(captured[-1]):
                 break
-            # 快速触发懒加载；仍分段滚动，避免一次到底未触发下一页。
-            for _step in range(3):
-                page.mouse.wheel(0, 1400)
-                page.wait_for_timeout(80)
+            # 滚至页面底部并给接口最多 1.5 秒响应；旧版只等约 0.5 秒，容易漏页。
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            for _step in range(15):
+                page.mouse.wheel(0, 1000)
+                page.wait_for_timeout(100)
                 if len(captured) > n:
                     break
-            for _wait in range(4):
-                if len(captured) > n:
-                    break
-                page.wait_for_timeout(80)
             if len(captured) == n:        # 滚动未触发新页 → 停
                 break
             n = len(captured)
+            if progress:
+                progress(page_no, end_page)
     finally:
         page.close()
 
     out: list[Item] = []
     seen: set[str] = set()
-    for raw in captured:
+    for raw in captured[start_page - 1:start_page - 1 + max_pages]:
         for it in parse_search_json(raw):
             if it.item_id not in seen:
                 seen.add(it.item_id)

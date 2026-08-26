@@ -40,5 +40,6 @@ export const api = {
   loginStatus: () => fetch('/api/login/status').then(J),
   logout: () => post('/api/login/logout'),
   run: (watch) => post('/api/run' + (watch ? `?watch=${encodeURIComponent(watch)}` : '')),
+  stop: () => post('/api/run/stop'),
   status: () => fetch('/api/status').then(J),
 }

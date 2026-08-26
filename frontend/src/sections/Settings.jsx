@@ -24,6 +24,7 @@ export default function Settings({ status }) {
     schedule_minutes: Math.max(0.5, Number(cfg.schedule_minutes) || 5),
     favorites_minutes: Math.max(0.5, Number(cfg.favorites_minutes) || 5),
     search_max_pages: Math.min(10, Math.max(1, Number(cfg.search_max_pages) || 5)),
+    deep_search_interval_seconds: Math.max(1, Number(cfg.deep_search_interval_seconds) || 300),
   })
   const save = async () => {
     setBusy(true)
@@ -126,8 +127,13 @@ export default function Settings({ status }) {
         <Field label="推荐刷新（分钟）" hint="可填 0.5 起；建议不低于 5 分钟"><input type="number" min="0.5" step="0.5" value={cfg.schedule_minutes} onChange={(e) => set('schedule_minutes', e.target.value)} /></Field>
         <Field label="收藏刷新（分钟）" hint="可填 0.5 起；建议不低于 5 分钟"><input type="number" min="0.5" step="0.5" value={cfg.favorites_minutes} onChange={(e) => set('favorites_minutes', e.target.value)} /></Field>
         <Field label="每次搜索页数" hint="建议 5 页；页数越多，商品越多但耗时越长"><input type="number" min="1" max="10" step="1" value={cfg.search_max_pages} onChange={(e) => set('search_max_pages', e.target.value)} /></Field>
+        <Field label="深度轮换间隔（秒）" hint="允许 1 秒起；建议至少 300 秒，过快可能触发验证或访问限制"><input type="number" min="1" step="1" value={cfg.deep_search_interval_seconds} onChange={(e) => set('deep_search_interval_seconds', e.target.value)} /></Field>
         <Field label="接收提醒的邮箱" hint="只填写收件地址"><input type="email" value={cfg.notify_to || ''} onChange={(e) => set('notify_to', e.target.value)} placeholder="name@example.com" /></Field>
         <Field label="降价提醒金额（元）" hint="达到该金额时提醒"><input type="number" min="0" value={cfg.min_drop_abs} onChange={(e) => set('min_drop_abs', Number(e.target.value))} /></Field>
+      </div>
+      <div className="form-row">
+        <Toggle checked={cfg.deep_search_enabled} onChange={(v) => set('deep_search_enabled', v)} label="启用深度轮换搜索" />
+        <span className="field-hint">每轮自动继续搜索 5 页（6–10、11–15…），到第 50 页后循环。</span>
       </div>
       <div className="notify-options">
         <Toggle checked={cfg.notify_on_new} onChange={(v) => set('notify_on_new', v)} label="新推荐" />

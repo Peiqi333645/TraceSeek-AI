@@ -16,7 +16,31 @@ from ..storage import repo
 from . import runtime, account
 
 _LOCK = threading.Lock()
-STATE: dict = {"running": False, "last": None}
+_CANCEL = threading.Event()
+STATE: dict = {"running": False, "last": None, "progress": 0, "phase": "idle", "detail": ""}
+
+
+def _begin(phase: str, detail: str = "") -> None:
+    _CANCEL.clear()
+    STATE.update(running=True, progress=1, phase=phase, detail=detail)
+
+
+def _finish() -> None:
+    STATE.update(running=False, progress=0, phase="idle", detail="")
+
+
+def request_stop() -> None:
+    """请求当前任务尽快结束；页面翻页与条件切换处都会检查。"""
+    _CANCEL.set()
+    if STATE.get("running"):
+        STATE.update(phase="stopping", detail="正在安全停止…")
+
+
+def _progress(watch: str, watch_done: int, watch_total: int,
+              page_done: int, page_total: int) -> None:
+    fraction = (watch_done + min(1, page_done / max(1, page_total))) / max(1, watch_total)
+    STATE.update(progress=min(88, max(3, round(fraction * 88))), phase="search",
+                 detail=f"{watch} · 第 {page_done}/{page_total} 页")
 
 
 def _now_iso() -> str:
@@ -60,7 +84,7 @@ def crawl(watch_name: str | None = None) -> dict:
     指定条件名 → 只搜该条件(不刷收藏/不核活)。锁忙则跳过(防重入)。"""
     if not _LOCK.acquire(blocking=False):
         return {"skipped": "busy"}
-    STATE["running"] = True
+    _begin("search", "准备搜索…")
     try:
         s = runtime.session()
         cfg = repo.get_config(s)
@@ -103,15 +127,27 @@ def crawl(watch_name: str | None = None) -> dict:
                 result = {"error": "login_expired", "at": _now_iso()}
             elif watch_name:
                 # 只跑单个条件: 仅搜索该条件 + 通知(不刷收藏、不核活, 快)
-                recs = service.scan_recommendations(ctx, s, settings, watches)
+                recs = service.scan_recommendations(ctx, s, settings, watches,
+                                                    progress=_progress,
+                                                    cancelled=_CANCEL.is_set)
+                STATE.update(progress=94, phase="notify", detail="整理新发现…")
                 notified = _notify(s, settings)
                 result = {"recommendations": recs, "scope": watch_name,
                           "notified": notified, "at": _now_iso()}
             else:
                 # 先搜索，让推荐页尽快出现首批结果；收藏监控随后运行。
-                recs = service.scan_recommendations(ctx, s, settings, watches)
+                recs = service.scan_recommendations(ctx, s, settings, watches,
+                                                    progress=_progress,
+                                                    cancelled=_CANCEL.is_set)
+                # 搜索结果已入库；关闭时跳过后置慢任务，避免窗口卡死。
+                if _CANCEL.is_set():
+                    result = {"recommendations": recs, "cancelled": True, "at": _now_iso()}
+                    STATE["last"] = result
+                    return result
+                STATE.update(progress=91, phase="favorites", detail="更新收藏价格…")
                 drops = service.run_price_monitor(ctx, s, settings)
                 # 给待审推荐核活, 标记卖出/删除的死链(避免重复打开)
+                STATE.update(progress=96, phase="checking", detail="检查商品状态…")
                 dead = service.sweep_liveness(ctx, s, settings)
                 notified = _notify(s, settings)
                 result = {"recommendations": recs, "drops": drops, "dead": dead,
@@ -119,7 +155,7 @@ def crawl(watch_name: str | None = None) -> dict:
     except Exception as e:  # noqa: BLE001 - 后台作业, 记录不抛
         result = {"error": str(e), "at": _now_iso()}
     finally:
-        STATE["running"] = False
+        _finish()
         _LOCK.release()
     STATE["last"] = result
     return result
@@ -131,7 +167,7 @@ def refresh_favorites() -> dict:
     """
     if not _LOCK.acquire(blocking=False):
         return {"skipped": "busy"}
-    STATE["running"] = True
+    _begin("favorites", "更新收藏价格…")
     try:
         s = runtime.session()
         cfg = repo.get_config(s)
@@ -147,7 +183,44 @@ def refresh_favorites() -> dict:
     except Exception as e:  # noqa: BLE001 - 后台作业, 记录不抛
         return {"error": str(e), "at": _now_iso()}
     finally:
-        STATE["running"] = False
+        _finish()
+        _LOCK.release()
+
+
+def deep_search() -> dict:
+    """深度轮换：每轮读取连续 5 页，从 6–10 页开始，最深 50 页后循环。"""
+    if not _LOCK.acquire(blocking=False):
+        return {"skipped": "busy"}
+    _begin("deep", "准备深度轮换…")
+    try:
+        s = runtime.session()
+        cfg = repo.get_config(s)
+        if cfg.paused or not cfg.deep_search_enabled:
+            return {"skipped": "disabled"}
+        settings = service.effective_settings(cfg)
+        if not Path(settings.data_dir, "storage_state.json").exists():
+            return {"error": "login_required", "at": _now_iso()}
+        start_page = max(6, int(cfg.deep_search_cursor_page or 6))
+        watches = [service.watchrow_to_watch(w) for w in repo.list_watches(s)]
+        with browser_session(settings) as ctx:
+            recs = service.scan_recommendations(
+                ctx, s, settings, watches, start_page=start_page, page_count=5,
+                progress=_progress, cancelled=_CANCEL.is_set)
+        next_page = start_page + 5
+        if next_page > 46:
+            next_page = 6
+        repo.update_config(s, deep_search_cursor_page=next_page)
+        notified = _notify(s, settings)
+        result = {"recommendations": recs, "pages": f"{start_page}-{start_page + 4}",
+                  "next_page": next_page, "notified": notified, "at": _now_iso()}
+        STATE["last"] = result
+        return result
+    except Exception as e:  # noqa: BLE001
+        result = {"error": str(e), "at": _now_iso()}
+        STATE["last"] = result
+        return result
+    finally:
+        _finish()
         _LOCK.release()
 
 
@@ -155,7 +228,7 @@ def approve(item_id: str) -> bool:
     """批准一个推荐 → 在闲鱼点"收藏"。等待锁(最多 180s)。"""
     if not _LOCK.acquire(timeout=180):
         return False
-    STATE["running"] = True
+    _begin("favorite", "正在收藏…")
     try:
         s = runtime.session()
         settings = service.effective_settings(repo.get_config(s))
@@ -164,5 +237,5 @@ def approve(item_id: str) -> bool:
     except Exception:
         return False
     finally:
-        STATE["running"] = False
+        _finish()
         _LOCK.release()

@@ -23,8 +23,11 @@ from . import liveness as _liveness_mod
 
 
 # --- 测试可 monkeypatch 的间接层(隔离真实浏览器) ---
-def _search(ctx, watch: Watch, settings: Settings):
-    return _search_mod.search(ctx, watch, settings.search_max_pages, settings.search_url)
+def _search(ctx, watch: Watch, settings: Settings, start_page: int = 1,
+            page_count: int | None = None, progress=None, cancelled=None):
+    count = settings.search_max_pages if page_count is None else page_count
+    return _search_mod.search(ctx, watch, count, settings.search_url, start_page=start_page,
+                              progress=progress, cancelled=cancelled)
 
 
 def _check_liveness(ctx, item_id: str) -> tuple[bool, str | None, dict | None]:
@@ -96,12 +99,16 @@ def effective_settings(cfg: AppConfig) -> Settings:
 
 # --- 用例 ---
 def scan_recommendations(ctx, session: Session, settings: Settings,
-                         watches: list[Watch]) -> int:
+                         watches: list[Watch], start_page: int = 1,
+                         page_count: int | None = None, progress=None,
+                         cancelled=None) -> int:
     """搜索 → 规则过滤 → 去重 → LLM 二次审核 → 写"我没见过的"推荐。返回新增数。"""
     created = 0
-    for w in watches:
-        if not w.enabled:
-            continue
+    enabled = [w for w in watches if w.enabled]
+    total = max(1, len(enabled))
+    for watch_index, w in enumerate(enabled):
+        if cancelled and cancelled():
+            break
         # 规则升级后同步清理该条件下历史遗留的明显无关候选，避免旧脏数据继续显示。
         for row in repo.list_recommendations(session, "new"):
             if row.watch_name != w.name:
@@ -114,7 +121,17 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
         # 规则过滤 + 去重(本轮内 & 已推荐过的)
         fresh: list[Item] = []
         seen: set[str] = set()
-        for item in _search(ctx, w, settings):
+        # 保持普通扫描的调用形式兼容现有插件/测试；仅深度扫描传分页参数。
+        def page_progress(done, pages):
+            if progress:
+                progress(w.name, watch_index, total, done, pages)
+        # 保持旧插件/测试对三参数 _search 的兼容；有进度需求时才传扩展参数。
+        if start_page == 1 and page_count is None and progress is None and cancelled is None:
+            found = _search(ctx, w, settings)
+        else:
+            found = _search(ctx, w, settings, start_page, page_count,
+                            progress=page_progress, cancelled=cancelled)
+        for item in found:
             if item.item_id in seen or not matches(item, w):
                 continue
             # 跳过已推荐过的、已在闲鱼收藏的、已知死链的、近期不看的
@@ -139,6 +156,8 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
                 repo.add_event(session, item.item_id, "new_recommendation",
                                {"title": item.title, "url": item.url, "price": item.price,
                                 "pic": item.pic_url, "watch": w.name})
+        if progress:
+            progress(w.name, watch_index + 1, total, 1, 1)
     return created
 
 

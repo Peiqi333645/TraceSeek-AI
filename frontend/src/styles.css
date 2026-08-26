@@ -50,8 +50,9 @@ button { font-family: inherit; }
   backdrop-filter: blur(18px);
 }
 .run-progress { position: fixed; z-index: 90; top: 55px; left: 0; right: 0; height: 4px; overflow: hidden; background: #20a95722; }
-.run-progress span { display: block; width: 38%; height: 100%; background: #20a957; border-radius: 4px; animation: run-progress 1.25s ease-in-out infinite; }
-@keyframes run-progress { from { transform: translateX(-110%); } to { transform: translateX(370%); } }
+.run-progress span { display: block; height: 100%; background: linear-gradient(90deg,#20a957,#46cf79); border-radius: 0 4px 4px 0; transition: width .3s ease; }
+.live-status { position: relative; min-width: 112px; justify-content: flex-end; }
+.live-status small { position: absolute; top: 19px; right: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #77d79a; font-size: 9px; font-weight: 500; }
 .logo { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -.2px; }
 .logo .mk {
   width: 28px; height: 28px; border-radius: 9px;

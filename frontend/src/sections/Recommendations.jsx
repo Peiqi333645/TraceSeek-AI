@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '../router'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, EmptyState, Thumb, TimeMeta, Toggle } from '../components/ui'
 import { yuan, fmtDate, fmtDateTime, ago } from '../util'
@@ -126,7 +126,6 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
   const filtered = onlyPassed ? items.filter((x) => x.rec_ok === true) : items
   const shown = [...filtered].sort((a, b) => {
     if (sort === 'price-asc') return Number(a.price || 0) - Number(b.price || 0)
-    if (sort === 'price-desc') return Number(b.price || 0) - Number(a.price || 0)
     return String(b.rec_created_at || '').localeCompare(String(a.rec_created_at || ''))
   })
 
@@ -168,7 +167,6 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
               <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
                 <option value="newest">最新发现</option>
                 <option value="price-asc">价格从低到高</option>
-                <option value="price-desc">价格从高到低</option>
               </select>
               <i className="ti ti-chevron-down" />
             </label>

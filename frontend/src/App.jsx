@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Navigate, Route, Routes } from './router'
 import { api } from './api'
 import { yuan, fmtDateTime } from './util'
 import Recommendations from './sections/Recommendations'
@@ -194,9 +194,10 @@ export default function App() {
           寻迹AI助手
         </div>
         <div className="grow" />
-        <div className="live">
+        <div className="live live-status">
           <span className={'pulse' + (running ? ' on' : '')} />
-          {running ? '正在更新…' : loggedIn ? '运行正常' : '请先登录'}
+          <span>{running ? '正在更新' : loggedIn ? '运行正常' : '请先登录'}</span>
+          {running && <small>{status?.detail || '准备中…'}</small>}
         </div>
         <button
           className={'icon-btn' + (railOpen ? ' on' : '')}
@@ -232,7 +233,9 @@ export default function App() {
           )}
         </div>
       </div>
-      {running && <div className="run-progress"><span /></div>}
+      {running && <div className="run-progress" aria-label={`更新进度 ${status?.progress || 1}%`}>
+        <span style={{ width: `${Math.max(2, status?.progress || 1)}%` }} />
+      </div>}
 
       {/* 侧栏 */}
       {loggedIn && <div className="side">
@@ -292,7 +295,10 @@ export default function App() {
             element={<Recommendations refreshKey={refreshKey} onToast={showToast} dropsToday={stats.drops_today} />}
           />
           <Route path="/favorites" element={<Drops refreshKey={refreshKey} />} />
-          <Route path="/watches" element={<Watches />} />
+          <Route path="/watches" element={<Watches onChanged={() => {
+            api.watches().then(setWatchList).catch(() => {})
+            setRefreshKey((k) => k + 1)
+          }} />} />
           <Route path="/settings" element={<Settings status={status} />} />
           <Route path="*" element={<Navigate to="/recommendations" replace />} />
         </Routes>}

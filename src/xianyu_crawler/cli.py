@@ -45,9 +45,11 @@ def cmd_serve(args: argparse.Namespace) -> None:
     try:
         cfg = repo.get_config(s)
         crawl_minutes, fav_minutes = cfg.schedule_minutes, cfg.favorites_minutes
+        deep_enabled = cfg.deep_search_enabled
+        deep_seconds = cfg.deep_search_interval_seconds
     finally:
         s.close()
-    scheduler.start(crawl_minutes, fav_minutes)
+    scheduler.start(crawl_minutes, fav_minutes, deep_enabled, deep_seconds)
     print(f">> 寻迹AI助手: http://{args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 

@@ -75,7 +75,8 @@ def api_put_config(body: dto.ConfigIn, _: None = Depends(require_login), s: Sess
     cfg = repo.update_config(s, **fields)
     try:
         from . import scheduler
-        scheduler.reschedule(cfg.schedule_minutes, cfg.favorites_minutes)
+        scheduler.reschedule(cfg.schedule_minutes, cfg.favorites_minutes,
+                             cfg.deep_search_enabled, cfg.deep_search_interval_seconds)
     except Exception:
         pass
     return dto.config_to_out(cfg)
@@ -189,9 +190,28 @@ def api_status(_: None = Depends(require_login), s: Session = Depends(get_db)):
     return {
         "running": runner.STATE["running"],
         "last": runner.STATE["last"],
+        "progress": runner.STATE.get("progress", 0),
+        "phase": runner.STATE.get("phase", "idle"),
+        "detail": runner.STATE.get("detail", ""),
         "paused": cfg.paused,
         "schedule_minutes": cfg.schedule_minutes,
     }
+
+
+@app.post("/api/run/stop")
+def api_stop(_: None = Depends(require_login)):
+    runner.request_stop()
+    return {"ok": True}
+
+
+@app.on_event("shutdown")
+def shutdown_jobs():
+    runner.request_stop()
+    try:
+        from . import scheduler
+        scheduler.shutdown()
+    except Exception:
+        pass
 
 
 # ---------- static SPA (前端构建产物, C4) ----------

@@ -158,7 +158,7 @@ def main() -> None:
 
     import uvicorn
     # 绝对导入: 打包后 launcher 作为 __main__ 运行, 相对导入会失败
-    from xianyu_crawler.web import scheduler, runtime
+    from xianyu_crawler.web import scheduler, runtime, runner
     from xianyu_crawler.web.app import app
     from xianyu_crawler.storage import repo
     from xianyu_crawler.config import Settings
@@ -167,7 +167,8 @@ def main() -> None:
     s = runtime.session()
     try:
         cfg = repo.get_config(s)
-        scheduler.start(cfg.schedule_minutes, cfg.favorites_minutes)
+        scheduler.start(cfg.schedule_minutes, cfg.favorites_minutes,
+                        cfg.deep_search_enabled, cfg.deep_search_interval_seconds)
     finally:
         s.close()
 
@@ -194,7 +195,10 @@ def main() -> None:
         sys.exit(1)
 
     if _open_app_window(url):       # 原生窗口, 阻塞到关闭 → 退出应用
+        runner.request_stop()
+        scheduler.shutdown()
         server.should_exit = True
+        srv_thread.join(timeout=3)
         return
 
     # 没有 pywebview: 退回系统默认浏览器, 保持服务存活到进程被杀

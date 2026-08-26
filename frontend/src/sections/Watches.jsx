@@ -16,7 +16,7 @@ const blank = () => ({
   enabled: true,
 })
 
-export default function Watches() {
+export default function Watches({ onChanged }) {
   const [list, setList] = useState(null)
   const [form, setForm] = useState(blank())
 
@@ -43,7 +43,8 @@ export default function Watches() {
     if (form.id) await api.updateWatch(form.id, body)
     else await api.createWatch(body)
     setForm(blank())
-    load()
+    await load()
+    onChanged?.()
   }
 
   const edit = (w) =>

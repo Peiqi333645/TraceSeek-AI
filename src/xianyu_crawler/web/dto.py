@@ -42,6 +42,8 @@ class ConfigIn(BaseModel):
     headless: bool | None = None
     search_max_pages: int | None = None
     favorites_max_pages: int | None = None
+    deep_search_enabled: bool | None = None
+    deep_search_interval_seconds: float | None = None
     # LLM 二次审核
     review_enabled: bool | None = None
     review_base_url: str | None = None
@@ -80,6 +82,8 @@ class ConfigOut(BaseModel):
     headless: bool
     search_max_pages: int
     favorites_max_pages: int
+    deep_search_enabled: bool
+    deep_search_interval_seconds: float
     # LLM 二次审核(token 不回传明文, 只给 set 标记)
     review_enabled: bool
     review_base_url: str
@@ -194,6 +198,8 @@ def config_to_out(c: AppConfig) -> ConfigOut:
         headless=c.headless,
         search_max_pages=c.search_max_pages,
         favorites_max_pages=c.favorites_max_pages,
+        deep_search_enabled=c.deep_search_enabled,
+        deep_search_interval_seconds=c.deep_search_interval_seconds,
         review_enabled=c.review_enabled,
         review_base_url=c.review_base_url or Settings().review_base_url,  # 显示生效值(可能来自本地 secret.env)
         review_model=c.review_model,
