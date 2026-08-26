@@ -33,8 +33,8 @@ class WatchOut(WatchIn):
 
 
 class ConfigIn(BaseModel):
-    schedule_minutes: int | None = None
-    favorites_minutes: int | None = None
+    schedule_minutes: float | None = None
+    favorites_minutes: float | None = None
     paused: bool | None = None
     min_drop_pct: float | None = None
     min_drop_abs: float | None = None
@@ -71,8 +71,8 @@ class ConfigIn(BaseModel):
 
 
 class ConfigOut(BaseModel):
-    schedule_minutes: int
-    favorites_minutes: int
+    schedule_minutes: float
+    favorites_minutes: float
     paused: bool
     min_drop_pct: float
     min_drop_abs: float

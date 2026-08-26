@@ -89,14 +89,14 @@ class AppConfig(Base):
     """单行(id=1)应用配置, 控制台可改。"""
     __tablename__ = "app_config"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    schedule_minutes: Mapped[int] = mapped_column(Integer, default=15)        # 推荐抓取间隔
-    favorites_minutes: Mapped[int] = mapped_column(Integer, default=10)       # 收藏刷新间隔(独立定时)
+    schedule_minutes: Mapped[float] = mapped_column(Float, default=15)        # 推荐抓取间隔
+    favorites_minutes: Mapped[float] = mapped_column(Float, default=10)       # 收藏刷新间隔(独立定时)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     min_drop_pct: Mapped[float] = mapped_column(Float, default=5.0)
     min_drop_abs: Mapped[float] = mapped_column(Float, default=50.0)
     notify_to: Mapped[str] = mapped_column(String, default="")  # 空=回退本地 XIANYU_NOTIFY_TO
     headless: Mapped[bool] = mapped_column(Boolean, default=True)
-    search_max_pages: Mapped[int] = mapped_column(Integer, default=3)
+    search_max_pages: Mapped[int] = mapped_column(Integer, default=5)
     favorites_max_pages: Mapped[int] = mapped_column(Integer, default=5)
     # LLM 二次审核(控制台可改; token 只写不回传, 留空回退环境变量)
     review_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

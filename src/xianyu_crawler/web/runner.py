@@ -108,9 +108,9 @@ def crawl(watch_name: str | None = None) -> dict:
                 result = {"recommendations": recs, "scope": watch_name,
                           "notified": notified, "at": _now_iso()}
             else:
-                # 先跑监控(刷新收藏列表入库, 含收藏夹死链), scan 才能据此过滤
-                drops = service.run_price_monitor(ctx, s, settings)
+                # 先搜索，让推荐页尽快出现首批结果；收藏监控随后运行。
                 recs = service.scan_recommendations(ctx, s, settings, watches)
+                drops = service.run_price_monitor(ctx, s, settings)
                 # 给待审推荐核活, 标记卖出/删除的死链(避免重复打开)
                 dead = service.sweep_liveness(ctx, s, settings)
                 notified = _notify(s, settings)

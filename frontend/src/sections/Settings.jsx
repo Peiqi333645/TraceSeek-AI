@@ -19,10 +19,16 @@ export default function Settings({ status }) {
   }, [])
 
   const set = (key, value) => setCfg((current) => ({ ...current, [key]: value }))
+  const normalizedConfig = () => ({
+    ...cfg,
+    schedule_minutes: Math.max(0.5, Number(cfg.schedule_minutes) || 5),
+    favorites_minutes: Math.max(0.5, Number(cfg.favorites_minutes) || 5),
+    search_max_pages: Math.min(10, Math.max(1, Number(cfg.search_max_pages) || 5)),
+  })
   const save = async () => {
     setBusy(true)
     try {
-      const body = { ...cfg }
+      const body = normalizedConfig()
       if (apiToken.trim()) body.review_api_token = apiToken.trim()
       setCfg(await api.saveConfig(body)); setApiToken(''); setSaved(true)
       setTimeout(() => setSaved(false), 1800)
@@ -31,7 +37,7 @@ export default function Settings({ status }) {
   const saveAndTestAi = async () => {
     setBusy(true); setAiResult(null)
     try {
-      const body = { ...cfg }
+      const body = normalizedConfig()
       if (apiToken.trim()) body.review_api_token = apiToken.trim()
       const next = await api.saveConfig(body)
       setCfg(next); setApiToken('')
@@ -117,8 +123,9 @@ export default function Settings({ status }) {
     <Card className="form-card premium-card">
       <div className="card-heading"><span className="card-icon"><i className="ti ti-clock-bolt" /></span><div><div className="form-title">刷新与提醒</div><p>保留自定义分钟；数值越小更新越快，建议不要低于5分钟。</p></div></div>
       <div className="form-grid simple-grid">
-        <Field label="推荐刷新（分钟）" hint="自动查找新商品"><input type="number" min="5" value={cfg.schedule_minutes} onChange={(e) => set('schedule_minutes', Math.max(5, Number(e.target.value)))} /></Field>
-        <Field label="收藏刷新（分钟）" hint="检查降价和售出状态"><input type="number" min="5" value={cfg.favorites_minutes} onChange={(e) => set('favorites_minutes', Math.max(5, Number(e.target.value)))} /></Field>
+        <Field label="推荐刷新（分钟）" hint="可填 0.5 起；建议不低于 5 分钟"><input type="number" min="0.5" step="0.5" value={cfg.schedule_minutes} onChange={(e) => set('schedule_minutes', e.target.value)} /></Field>
+        <Field label="收藏刷新（分钟）" hint="可填 0.5 起；建议不低于 5 分钟"><input type="number" min="0.5" step="0.5" value={cfg.favorites_minutes} onChange={(e) => set('favorites_minutes', e.target.value)} /></Field>
+        <Field label="每次搜索页数" hint="建议 5 页；页数越多，商品越多但耗时越长"><input type="number" min="1" max="10" step="1" value={cfg.search_max_pages} onChange={(e) => set('search_max_pages', e.target.value)} /></Field>
         <Field label="接收提醒的邮箱" hint="只填写收件地址"><input type="email" value={cfg.notify_to || ''} onChange={(e) => set('notify_to', e.target.value)} placeholder="name@example.com" /></Field>
         <Field label="降价提醒金额（元）" hint="达到该金额时提醒"><input type="number" min="0" value={cfg.min_drop_abs} onChange={(e) => set('min_drop_abs', Number(e.target.value))} /></Field>
       </div>

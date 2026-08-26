@@ -163,11 +163,15 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
           </div>
           <div className="rec-tools">
             <Toggle checked={cfg.review_enabled} onChange={setAiEnabled} label="使用AI智能筛选" />
-            <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="newest">最新发现</option>
-              <option value="price-asc">价格从低到高</option>
-              <option value="price-desc">价格从高到低</option>
-            </select>
+            <label className="sort-control" title="商品排序">
+              <i className="ti ti-arrows-sort" />
+              <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
+                <option value="newest">最新发现</option>
+                <option value="price-asc">价格从低到高</option>
+                <option value="price-desc">价格从高到低</option>
+              </select>
+              <i className="ti ti-chevron-down" />
+            </label>
           </div>
         </div>
       )}

@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     action_delay_max: float = 3.5
     search_url: str = "https://www.goofish.com/search"
     favorites_url: str = "https://www.goofish.com/collection"
-    search_max_pages: int = 3
+    search_max_pages: int = 5
     favorites_max_pages: int = 5
     # 二次审核(LLM 相关性过滤) — 任意 OpenAI 兼容接口。
     # 具体接口地址/密钥放本地 data/secret.env(XIANYU_REVIEW_BASE_URL / XIANYU_REVIEW_API_TOKEN),

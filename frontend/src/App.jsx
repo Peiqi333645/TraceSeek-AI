@@ -130,6 +130,8 @@ export default function App() {
       setStatus(st)
       setStats(sg)
       setEvents(ev)
+      // 抓取过程中同步刷新推荐列表，让首批结果无需等待整轮收藏/核活结束。
+      if (st.running) setRefreshKey((k) => k + 1)
       if (wasRunning.current && !st.running) {
         setRefreshKey((k) => k + 1)
         if (st.last?.error) showToast(`抓取出错：${st.last.error}`)

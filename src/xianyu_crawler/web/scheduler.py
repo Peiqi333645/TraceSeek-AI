@@ -18,23 +18,23 @@ _CRAWL_JOB = "crawl"
 _FAV_JOB = "favorites"
 
 
-def start(crawl_minutes: int, favorites_minutes: int) -> None:
+def start(crawl_minutes: float, favorites_minutes: float) -> None:
     global _scheduler
     if _scheduler is not None:
         return
     _scheduler = BackgroundScheduler()
-    _scheduler.add_job(runner.crawl, IntervalTrigger(minutes=max(1, crawl_minutes)),
+    _scheduler.add_job(runner.crawl, IntervalTrigger(minutes=max(0.5, crawl_minutes)),
                        id=_CRAWL_JOB, max_instances=1, coalesce=True)
-    _scheduler.add_job(runner.refresh_favorites, IntervalTrigger(minutes=max(1, favorites_minutes)),
+    _scheduler.add_job(runner.refresh_favorites, IntervalTrigger(minutes=max(0.5, favorites_minutes)),
                        id=_FAV_JOB, max_instances=1, coalesce=True)
     _scheduler.start()
 
 
-def reschedule(crawl_minutes: int, favorites_minutes: int) -> None:
+def reschedule(crawl_minutes: float, favorites_minutes: float) -> None:
     if _scheduler is None:
         return
-    _scheduler.reschedule_job(_CRAWL_JOB, trigger=IntervalTrigger(minutes=max(1, crawl_minutes)))
-    _scheduler.reschedule_job(_FAV_JOB, trigger=IntervalTrigger(minutes=max(1, favorites_minutes)))
+    _scheduler.reschedule_job(_CRAWL_JOB, trigger=IntervalTrigger(minutes=max(0.5, crawl_minutes)))
+    _scheduler.reschedule_job(_FAV_JOB, trigger=IntervalTrigger(minutes=max(0.5, favorites_minutes)))
 
 
 def shutdown() -> None:

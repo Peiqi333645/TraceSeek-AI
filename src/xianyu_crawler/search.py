@@ -12,8 +12,6 @@ from urllib.parse import quote
 from .config import Watch
 from .models import Item
 from .parsing import to_price, guess_condition, to_dt_ms
-from .anti_detect import human_scroll
-
 SEARCH_URL = "https://www.goofish.com/search"
 SEARCH_API = "mtop.taobao.idlemtopsearch.pc.search"
 
@@ -76,15 +74,26 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL) 
     page.on("response", _on_response)
     try:
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
-        page.goto(f"{search_url}?q={quote(query)}")
-        page.wait_for_timeout(4000)
+        page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
+        # 不再固定空等 4 秒：接口一返回就继续，慢网最多等 3.5 秒。
+        for _ in range(35):
+            if captured:
+                break
+            page.wait_for_timeout(100)
         n = len(captured)
         for _ in range(max(0, max_pages - 1)):
             if captured and not _has_next_page(captured[-1]):
                 break
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            human_scroll(page, steps=2)
-            page.wait_for_timeout(2500)
+            # 快速触发懒加载；仍分段滚动，避免一次到底未触发下一页。
+            for _step in range(3):
+                page.mouse.wheel(0, 1400)
+                page.wait_for_timeout(80)
+                if len(captured) > n:
+                    break
+            for _wait in range(4):
+                if len(captured) > n:
+                    break
+                page.wait_for_timeout(80)
             if len(captured) == n:        # 滚动未触发新页 → 停
                 break
             n = len(captured)

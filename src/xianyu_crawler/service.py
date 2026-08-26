@@ -102,6 +102,15 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
     for w in watches:
         if not w.enabled:
             continue
+        # 规则升级后同步清理该条件下历史遗留的明显无关候选，避免旧脏数据继续显示。
+        for row in repo.list_recommendations(session, "new"):
+            if row.watch_name != w.name:
+                continue
+            old_item = Item(item_id=row.item_id, title=row.title, url=row.url,
+                            price=row.latest_price, location=row.location,
+                            condition=row.condition, free_shipping=row.free_shipping)
+            if not matches(old_item, w):
+                repo.set_rec_status(session, row.item_id, "rejected")
         # 规则过滤 + 去重(本轮内 & 已推荐过的)
         fresh: list[Item] = []
         seen: set[str] = set()

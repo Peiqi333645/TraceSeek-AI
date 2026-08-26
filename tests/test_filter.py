@@ -45,3 +45,14 @@ def test_free_shipping_required():
 
 def test_none_criteria_ignored():
     assert matches(I(location=None, condition=None), W()) is True
+
+
+def test_keyword_relevance_rejects_unrelated_listing():
+    watch = W(keywords=["MacBook"])
+    assert matches(I(title="MacBook Pro 14寸 M1 Pro"), watch) is True
+    assert matches(I(title="烟台日落 感兴趣的话点我想要聊吧"), watch) is False
+
+
+def test_non_product_post_is_rejected():
+    watch = W(keywords=["MacBook"])
+    assert matches(I(title="回收 MacBook 高价咨询"), watch) is False
