@@ -14,7 +14,19 @@ _NON_PRODUCT_TERMS = (
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", text.lower())
+    value = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", text.lower())
+    # 闲鱼网页会把常见错序品牌词自动纠正，但直接请求搜索接口不会。
+    # 匹配阶段也统一成平台常用写法，避免“康时泰 G1”无法命中“康泰时 G1”。
+    return value.replace("康时泰", "康泰时")
+
+
+def _norm_condition(text: str) -> str:
+    chinese = {"一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
+               "六": "6", "七": "7", "八": "8", "九": "9", "十": "10"}
+    value = _norm(text)
+    for old, new in chinese.items():
+        value = value.replace(old, new)
+    return value.replace("成新", "新")
 
 
 def keyword_matches(title: str, keywords: list[str]) -> bool:
@@ -42,10 +54,13 @@ def matches(item: Item, watch: Watch) -> bool:
         return False
     if watch.price_max is not None and item.price > watch.price_max:
         return False
-    if watch.city and (not item.location or watch.city not in item.location):
+    # 搜索列表经常不返回 area/location。字段缺失时先保留，只有明确返回了
+    # 其他城市才排除；否则像“康时泰 G1 + 杭州”会被整批误删。
+    if watch.city and item.location and _norm(watch.city) not in _norm(item.location):
         return False
     # 成色为 best-effort 提取(可能 None); 未知不过滤, 只在"已知且不符"时排除
-    if watch.condition and item.condition is not None and item.condition not in watch.condition:
+    if (watch.condition and item.condition is not None
+            and _norm_condition(item.condition) not in {_norm_condition(x) for x in watch.condition}):
         return False
     if watch.free_shipping is not None and item.free_shipping != watch.free_shipping:
         return False

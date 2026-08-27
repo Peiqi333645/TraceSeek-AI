@@ -3,6 +3,12 @@ import { api } from '../api'
 import { Card, Button, Badge, Spinner, EmptyState, Toggle, Field } from '../components/ui'
 import { splitCsv } from '../util'
 
+const CONDITION_OPTIONS = [
+  '全新', '几乎全新', '轻微使用痕迹',
+  '明显使用痕迹', '仅拆封未使用', '无原包装',
+  '官翻机', '包装脏污/变形/破损', '轻微划痕/脏污',
+]
+
 const blank = () => ({
   id: null,
   name: '',
@@ -10,7 +16,7 @@ const blank = () => ({
   price_min: '',
   price_max: '',
   city: '',
-  conditionText: '',
+  condition: [],
   requirement: '',
   free_shipping: false,
   enabled: true,
@@ -35,7 +41,7 @@ export default function Watches({ onChanged }) {
       price_min: form.price_min === '' ? null : Number(form.price_min),
       price_max: form.price_max === '' ? null : Number(form.price_max),
       city: form.city.trim() || null,
-      condition: form.conditionText.trim() ? splitCsv(form.conditionText) : null,
+      condition: form.condition.length ? form.condition : null,
       requirement: form.requirement.trim() || null,
       free_shipping: form.free_shipping || null,
       enabled: form.enabled,
@@ -55,7 +61,7 @@ export default function Watches({ onChanged }) {
       price_min: w.price_min ?? '',
       price_max: w.price_max ?? '',
       city: w.city ?? '',
-      conditionText: (w.condition || []).join(', '),
+      condition: (w.condition || []).filter((v) => CONDITION_OPTIONS.includes(v)),
       requirement: w.requirement ?? '',
       free_shipping: !!w.free_shipping,
       enabled: w.enabled,
@@ -110,12 +116,25 @@ export default function Watches({ onChanged }) {
           <Field label="城市（可选）">
             <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="上海" />
           </Field>
-          <Field label="成色（逗号分隔，可选）">
-            <input
-              value={form.conditionText}
-              onChange={(e) => set('conditionText', e.target.value)}
-              placeholder="99新, 几乎全新"
-            />
+          <Field label="成色（可多选）" hint="采用闲鱼原生9档描述；不选择表示不限成色">
+            <div className="condition-picker">
+              {CONDITION_OPTIONS.map((option) => {
+                const selected = form.condition.includes(option)
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`condition-chip${selected ? ' selected' : ''}`}
+                    aria-pressed={selected}
+                    onClick={() => set('condition', selected
+                      ? form.condition.filter((v) => v !== option)
+                      : [...form.condition, option])}
+                  >
+                    {option}
+                  </button>
+                )
+              })}
+            </div>
           </Field>
         </div>
         <div className="req-field">

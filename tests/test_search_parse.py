@@ -4,7 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from xianyu_crawler.search import parse_search_json
+from xianyu_crawler.search import parse_search_json, normalize_search_query, _native_condition
+
+
+def test_search_query_applies_same_correction_as_goofish_web():
+    assert normalize_search_query("康时泰 G1") == "康泰时 G1"
+
+
+def test_native_condition_is_read_from_card_tags_not_only_title():
+    card = {"tags": [{"text": "轻微使用痕迹"}], "title": "康泰时 G1"}
+    assert _native_condition(card, "康泰时 G1") == "轻微使用痕迹"
 
 FIXTURE = Path(__file__).parent / "fixtures" / "search.sample.json"
 

@@ -117,7 +117,8 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
                             price=row.latest_price, location=row.location,
                             condition=row.condition, free_shipping=row.free_shipping)
             if not matches(old_item, w):
-                repo.set_rec_status(session, row.item_id, "rejected")
+                # 与用户主动拒绝区分；规则修正或条件放宽后允许重新出现。
+                repo.set_rec_status(session, row.item_id, "filtered")
         # 规则过滤 + 去重(本轮内 & 已推荐过的)
         fresh: list[Item] = []
         seen: set[str] = set()

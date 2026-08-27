@@ -49,10 +49,13 @@ button { font-family: inherit; }
   box-shadow: 0 1px 16px #3a2d0808;
   backdrop-filter: blur(18px);
 }
-.run-progress { position: fixed; z-index: 90; top: 55px; left: 0; right: 0; height: 4px; overflow: hidden; background: #20a95722; }
-.run-progress span { display: block; height: 100%; background: linear-gradient(90deg,#20a957,#46cf79); border-radius: 0 4px 4px 0; transition: width .3s ease; }
-.live-status { position: relative; min-width: 112px; justify-content: flex-end; }
-.live-status small { position: absolute; top: 19px; right: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #77d79a; font-size: 9px; font-weight: 500; }
+.header-progress-slot { flex:1; display:flex; justify-content:center; min-width:120px; }
+.header-progress { width:min(360px,38vw); display:flex; align-items:center; gap:10px; color:#b9c0ba; font-size:11px; }
+.header-progress-track { flex:1; height:7px; overflow:hidden; border-radius:999px; background:#ffffff20; box-shadow:inset 0 1px 2px #0008; }
+.header-progress-track span { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#18a957,#4cdb83); box-shadow:0 0 12px #30cf7466; transition:width .3s ease; }
+.header-progress b { width:34px; font:600 11px 'Geist Mono',monospace; }
+.live-status { min-width:112px; justify-content:flex-end; }
+.live-status .updating { color:#43d17c; font-weight:600; }
 .logo { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -.2px; }
 .logo .mk {
   width: 28px; height: 28px; border-radius: 9px;
@@ -215,9 +218,19 @@ button { font-family: inherit; }
 }
 .rec-filter .seg.on { background: var(--soft); color: var(--acc); }
 .rec-filter .seg b { font-family: 'Geist Mono', monospace; margin-left: 4px; font-weight: 500; }
+.sort-switch { display:inline-flex; align-items:center; gap:4px; padding:4px; border:1px solid #e4d7aa; border-radius:14px; background:#fffdf6; box-shadow:0 5px 16px #7b5c0010; }
+.sort-switch button { border:0; background:transparent; color:#756f62; border-radius:10px; padding:7px 12px; display:flex; align-items:center; gap:6px; cursor:pointer; font:600 12px 'Geist','Noto Sans SC',sans-serif; transition:.18s ease; }
+.sort-switch button:hover { color:#3b320f; background:#fff5cc; }
+.sort-switch button.on { color:#171300; background:linear-gradient(180deg,#ffd542,#f4b800); box-shadow:0 4px 12px #c8940033,inset 0 1px #fff9; transform:translateY(-1px); }
+.sort-switch button i { font-size:14px; }
 
 /* 分组(按监控条件) */
 .rec-group { margin-bottom: 26px; }
+.watch-tabs { display:flex; align-items:center; gap:8px; margin:4px 0 16px; padding-bottom:3px; overflow-x:auto; scrollbar-width:thin; }
+.watch-tabs button { flex:none; border:1px solid var(--line); border-radius:999px; background:var(--s1); color:var(--dim); padding:8px 14px; cursor:pointer; font:600 12.5px 'Geist','Noto Sans SC',sans-serif; transition:.16s ease; }
+.watch-tabs button:hover { border-color:#d9bb51; color:var(--fg); transform:translateY(-1px); }
+.watch-tabs button.on { border-color:#e2b500; color:#171300; background:linear-gradient(180deg,#ffd542,#f4b800); box-shadow:0 5px 14px #b4860028,inset 0 1px #fff9; }
+.watch-tabs button b { margin-left:7px; font:600 10.5px 'Geist Mono',monospace; opacity:.68; }
 .rec-group-head { display: flex; align-items: center; gap: 11px; margin: 4px 0 13px; }
 .rec-group-name { font-size: 13px; font-weight: 600; letter-spacing: -.1px; }
 .rec-group-count { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--dim); background: var(--s1); border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; }
@@ -351,6 +364,14 @@ button { font-family: inherit; }
 .field input:focus, .field textarea:focus, .req-input:focus { outline: none; border-color: var(--acc); }
 .field textarea, .req-input { resize: vertical; line-height: 1.5; }
 .field input::placeholder, .req-input::placeholder { color: var(--dim); opacity: .7; }
+.condition-picker { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.condition-chip {
+  min-height:38px; padding:7px 8px; border:1px solid var(--line); border-radius:10px;
+  background:var(--s2); color:var(--fg); font:500 12px 'Geist','Noto Sans SC',sans-serif;
+  line-height:1.25; cursor:pointer; transition:border-color .15s,background .15s,box-shadow .15s;
+}
+.condition-chip:hover { border-color:#d8b12b; }
+.condition-chip.selected { background:#fff5c7; border-color:var(--acc); color:#6b5100; box-shadow:inset 0 0 0 1px #ffd12f; }
 
 /* 极简设置页 */
 .settings-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:18px; }

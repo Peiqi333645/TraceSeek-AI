@@ -29,6 +29,16 @@ def test_city_substring():
     assert matches(I(location="北京市"), W(city="上海")) is False
 
 
+def test_missing_city_metadata_does_not_drop_item():
+    assert matches(I(title="康时泰 G1 九成新", location=None),
+                   W(keywords=["康时泰 G1"], city="杭州")) is True
+
+
+def test_common_brand_typo_matches_correct_listing_title():
+    assert matches(I(title="康泰时 G1 相机 九成新"),
+                   W(keywords=["康时泰 G1"])) is True
+
+
 def test_condition_in_list():
     assert matches(I(condition="95新"), W(condition=["99新", "95新"])) is True
     assert matches(I(condition="8成新"), W(condition=["99新"])) is False
@@ -37,6 +47,10 @@ def test_condition_in_list():
 def test_unknown_condition_passes():
     # 成色未知(None)时不应被成色过滤排除
     assert matches(I(condition=None), W(condition=["99新"])) is True
+
+
+def test_condition_chinese_and_number_are_equivalent():
+    assert matches(I(condition="九成新"), W(condition=["9新"])) is True
 
 
 def test_free_shipping_required():

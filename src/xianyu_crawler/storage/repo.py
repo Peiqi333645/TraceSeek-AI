@@ -205,7 +205,9 @@ def update_config(s: Session, **fields) -> AppConfig:
 
 def has_been_recommended(s: Session, item_id: str) -> bool:
     row = s.get(ItemRow, item_id)
-    return bool(row and row.rec_status)
+    # ``filtered`` 是程序按旧规则自动隐藏，不等同于用户手动拒绝。
+    # 条件或规则修正后必须允许它重新进入推荐。
+    return bool(row and row.rec_status and row.rec_status != "filtered")
 
 
 def create_recommendation(s: Session, item: Item, watch_name: str | None,

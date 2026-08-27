@@ -193,11 +193,15 @@ export default function App() {
           <img className="brand-icon" src="/brand-icon.png" alt="" />
           寻迹AI助手
         </div>
-        <div className="grow" />
+        <div className="header-progress-slot">
+          {running && <div className="header-progress" aria-label={`更新进度 ${status?.progress || 1}%`}>
+            <div className="header-progress-track"><span style={{ width: `${Math.max(2, status?.progress || 1)}%` }} /></div>
+            <b>{Math.round(status?.progress || 1)}%</b>
+          </div>}
+        </div>
         <div className="live live-status">
           <span className={'pulse' + (running ? ' on' : '')} />
-          <span>{running ? '正在更新' : loggedIn ? '运行正常' : '请先登录'}</span>
-          {running && <small>{status?.detail || '准备中…'}</small>}
+          <span className={running ? 'updating' : ''}>{running ? '正在更新' : loggedIn ? '运行正常' : '请先登录'}</span>
         </div>
         <button
           className={'icon-btn' + (railOpen ? ' on' : '')}
@@ -233,9 +237,6 @@ export default function App() {
           )}
         </div>
       </div>
-      {running && <div className="run-progress" aria-label={`更新进度 ${status?.progress || 1}%`}>
-        <span style={{ width: `${Math.max(2, status?.progress || 1)}%` }} />
-      </div>}
 
       {/* 侧栏 */}
       {loggedIn && <div className="side">

@@ -11,6 +11,7 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
   const [muteOpen, setMuteOpen] = useState(null)
   const [onlyPassed, setOnlyPassed] = useState(true)
   const [sort, setSort] = useState('newest')
+  const [activeWatch, setActiveWatch] = useState(null)
 
   const load = () => Promise.all([api.recommendations('new'), api.config()]).then(([xs, c]) => {
     setItems(xs)
@@ -140,6 +141,8 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
     }
     byWatch[k].push(it)
   }
+  const selectedWatch = order.includes(activeWatch) ? activeWatch : order[0]
+  const selectedItems = selectedWatch ? byWatch[selectedWatch] : []
 
   return (
     <section>
@@ -162,14 +165,10 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
           </div>
           <div className="rec-tools">
             <Toggle checked={cfg.review_enabled} onChange={setAiEnabled} label="使用AI智能筛选" />
-            <label className="sort-control" title="商品排序">
-              <i className="ti ti-arrows-sort" />
-              <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)}>
-                <option value="newest">最新发现</option>
-                <option value="price-asc">价格从低到高</option>
-              </select>
-              <i className="ti ti-chevron-down" />
-            </label>
+            <div className="sort-switch" role="group" aria-label="商品排序">
+              <button className={sort === 'newest' ? 'on' : ''} onClick={() => setSort('newest')}><i className="ti ti-sparkles" />最新发现</button>
+              <button className={sort === 'price-asc' ? 'on' : ''} onClick={() => setSort('price-asc')}><i className="ti ti-sort-ascending" />价格最低</button>
+            </div>
           </div>
         </div>
       )}
@@ -183,15 +182,12 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
           }
         />
       ) : (
-        order.map((name) => (
-          <div key={name} className="rec-group">
-            <div className="rec-group-head">
-              <span className="rec-group-name">{name}</span>
-              <span className="rec-group-count">{byWatch[name].length}</span>
-            </div>
-            <div className="grid">{byWatch[name].map(renderCard)}</div>
+        <div className="rec-group">
+          <div className="watch-tabs" role="tablist" aria-label="商品分类">
+            {order.map((name) => <button key={name} role="tab" aria-selected={selectedWatch === name} className={selectedWatch === name ? 'on' : ''} onClick={() => setActiveWatch(name)}>{name}<b>{byWatch[name].length}</b></button>)}
           </div>
-        ))
+          <div className="grid">{selectedItems.map(renderCard)}</div>
+        </div>
       )}
     </section>
   )

@@ -133,7 +133,7 @@ export default function Settings({ status }) {
       </div>
       <div className="form-row">
         <Toggle checked={cfg.deep_search_enabled} onChange={(v) => set('deep_search_enabled', v)} label="启用深度轮换搜索" />
-        <span className="field-hint">每轮自动继续搜索 5 页（6–10、11–15…），到第 50 页后循环。</span>
+        <span className="field-hint">普通刷新检查第 1–5 页；深度轮换依次检查 6–10、11–15…46–50 页，完成后回到 6–10 页重新检查新变化。</span>
       </div>
       <div className="notify-options">
         <Toggle checked={cfg.notify_on_new} onChange={(v) => set('notify_on_new', v)} label="新推荐" />
