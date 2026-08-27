@@ -146,10 +146,12 @@ def test_effective_settings_smtp_falls_back_to_env(monkeypatch):
 def test_watchrow_to_watch_roundtrip():
     s = make_session("sqlite:///:memory:", create=True)
     row = repo.add_watch(s, name="w", keywords='["iPhone","苹果"]',
-                         price_max=5000, condition='["99新"]', free_shipping=True)
+                         price_max=5000, city="杭州", district="上城区",
+                         condition='["99新"]', free_shipping=True)
     w = service.watchrow_to_watch(row)
     assert w.keywords == ["iPhone", "苹果"] and w.condition == ["99新"]
     assert w.price_max == 5000 and w.free_shipping is True
+    assert w.city == "杭州" and w.district == "上城区"
 
 
 # --- 一键 AI 审核(补审已入库推荐) ---

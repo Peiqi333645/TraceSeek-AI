@@ -24,9 +24,10 @@ def test_price_above_max():
     assert matches(I(price=3000), W(price_max=2000)) is False
 
 
-def test_city_substring():
+def test_city_is_not_guessed_from_incomplete_card_location():
     assert matches(I(location="上海市浦东"), W(city="上海")) is True
-    assert matches(I(location="北京市"), W(city="上海")) is False
+    # 地区由闲鱼原生区域控件执行；卡片地址只显示省份/城市时不再二次误删。
+    assert matches(I(location="北京市"), W(city="上海")) is True
 
 
 def test_missing_city_metadata_does_not_drop_item():
@@ -37,6 +38,13 @@ def test_missing_city_metadata_does_not_drop_item():
 def test_common_brand_typo_matches_correct_listing_title():
     assert matches(I(title="康泰时 G1 相机 九成新"),
                    W(keywords=["康时泰 G1"])) is True
+
+
+def test_all_keyword_tokens_are_required_and_english_brand_alias_matches():
+    watch = W(keywords=["康泰时 G1"])
+    assert matches(I(title="CONTAX G1 绿标机身"), watch) is True
+    assert matches(I(title="康泰时 T1 旁轴相机"), watch) is False
+    assert matches(I(title="康泰时 G2 机身"), watch) is False
 
 
 def test_condition_in_list():

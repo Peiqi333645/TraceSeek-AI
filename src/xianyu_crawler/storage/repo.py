@@ -182,6 +182,23 @@ def delete_watch(s: Session, watch_id: int) -> None:
         s.commit()
 
 
+def hide_recommendations_for_watch(s: Session, watch_name: str) -> int:
+    """条件被编辑/删除后立即隐藏旧快照结果，下一次运行按新条件重新入库。"""
+    rows = list(s.scalars(select(ItemRow).where(
+        ItemRow.watch_name == watch_name, ItemRow.rec_status == "new")))
+    for row in rows:
+        row.rec_status = "filtered"
+    # 右侧“实时事件”也不能继续展示该条件修改前的不相关发现。
+    for event in s.scalars(select(Event).where(Event.type == "new_recommendation")):
+        try:
+            if json.loads(event.payload or "{}").get("watch") == watch_name:
+                s.delete(event)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    s.commit()
+    return len(rows)
+
+
 # ---------- App config (单行) ----------
 
 def get_config(s: Session) -> AppConfig:

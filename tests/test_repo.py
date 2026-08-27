@@ -149,3 +149,13 @@ def test_update_item_stats_fills_counts():
     repo.update_item_stats(s, "x", browse_count=200)   # None 的不覆盖
     row = _row(s, "x")
     assert (row.browse_count, row.collect_count, row.want_count) == (200, 3, 5)
+
+
+def test_hide_recommendations_for_changed_watch_allows_fresh_reentry():
+    s = session()
+    item = Item(item_id="old", title="康泰时 G1", url="u", price=3000)
+    assert repo.create_recommendation(s, item, "相机") is True
+    assert repo.hide_recommendations_for_watch(s, "相机") == 1
+    assert repo.list_recommendations(s) == []
+    assert repo.has_been_recommended(s, "old") is False
+    assert repo.create_recommendation(s, item, "相机") is True

@@ -78,6 +78,7 @@ class WatchRow(Base):
     price_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    district: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     condition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list
     free_shipping: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     seller_min_credit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

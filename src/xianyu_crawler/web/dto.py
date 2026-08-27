@@ -21,6 +21,7 @@ class WatchIn(BaseModel):
     price_min: float | None = None
     price_max: float | None = None
     city: str | None = None
+    district: str | None = None
     condition: list[str] | None = None
     free_shipping: bool | None = None
     seller_min_credit: int | None = None
@@ -163,6 +164,7 @@ def watchin_to_fields(b: WatchIn) -> dict:
         "price_min": b.price_min,
         "price_max": b.price_max,
         "city": b.city,
+        "district": b.district,
         "condition": json.dumps(b.condition, ensure_ascii=False) if b.condition is not None else None,
         "free_shipping": b.free_shipping,
         "seller_min_credit": b.seller_min_credit,
@@ -179,6 +181,7 @@ def watchrow_to_out(w: WatchRow) -> WatchOut:
         price_min=w.price_min,
         price_max=w.price_max,
         city=w.city,
+        district=w.district,
         condition=json.loads(w.condition) if w.condition else None,
         free_shipping=w.free_shipping,
         seller_min_credit=w.seller_min_credit,

@@ -16,6 +16,7 @@ const blank = () => ({
   price_min: '',
   price_max: '',
   city: '',
+  district: '',
   condition: [],
   requirement: '',
   free_shipping: false,
@@ -26,7 +27,11 @@ export default function Watches({ onChanged }) {
   const [list, setList] = useState(null)
   const [form, setForm] = useState(blank())
 
-  const load = () => api.watches().then(setList)
+  const load = async () => {
+    const next = await api.watches()
+    setList(next)
+    return next
+  }
   useEffect(() => {
     load()
   }, [])
@@ -41,6 +46,7 @@ export default function Watches({ onChanged }) {
       price_min: form.price_min === '' ? null : Number(form.price_min),
       price_max: form.price_max === '' ? null : Number(form.price_max),
       city: form.city.trim() || null,
+      district: form.district.trim() || null,
       condition: form.condition.length ? form.condition : null,
       requirement: form.requirement.trim() || null,
       free_shipping: form.free_shipping || null,
@@ -49,8 +55,8 @@ export default function Watches({ onChanged }) {
     if (form.id) await api.updateWatch(form.id, body)
     else await api.createWatch(body)
     setForm(blank())
-    await load()
-    onChanged?.()
+    const next = await load()
+    onChanged?.(next)
   }
 
   const edit = (w) =>
@@ -61,6 +67,7 @@ export default function Watches({ onChanged }) {
       price_min: w.price_min ?? '',
       price_max: w.price_max ?? '',
       city: w.city ?? '',
+      district: w.district ?? '',
       condition: (w.condition || []).filter((v) => CONDITION_OPTIONS.includes(v)),
       requirement: w.requirement ?? '',
       free_shipping: !!w.free_shipping,
@@ -74,17 +81,20 @@ export default function Watches({ onChanged }) {
       price_min: w.price_min,
       price_max: w.price_max,
       city: w.city,
+      district: w.district,
       condition: w.condition,
       requirement: w.requirement,
       free_shipping: w.free_shipping,
       enabled: !w.enabled,
     })
-    load()
+    const next = await load()
+    onChanged?.(next)
   }
 
   const remove = async (id) => {
     await api.deleteWatch(id)
-    load()
+    const next = await load()
+    onChanged?.(next)
   }
 
   if (list === null) return <Spinner />
@@ -113,8 +123,11 @@ export default function Watches({ onChanged }) {
           <Field label="最高价">
             <input type="number" value={form.price_max} onChange={(e) => set('price_max', e.target.value)} />
           </Field>
-          <Field label="城市（可选）">
-            <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="上海" />
+          <Field label="城市（可选）" hint="填写闲鱼地区面板中的城市名称">
+            <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="杭州" />
+          </Field>
+          <Field label="区县（可选）" hint="先填写城市，再填写区县；例如上城区">
+            <input value={form.district} onChange={(e) => set('district', e.target.value)} placeholder="上城区" />
           </Field>
           <Field label="成色（可多选）" hint="采用闲鱼原生9档描述；不选择表示不限成色">
             <div className="condition-picker">
@@ -183,6 +196,7 @@ export default function Watches({ onChanged }) {
                     </span>
                   )}
                   {w.city && <span>{w.city}</span>}
+                  {w.district && <span>{w.district}</span>}
                   {w.free_shipping && <Badge>包邮</Badge>}
                   {(w.condition || []).map((c) => (
                     <span key={c}>{c}</span>

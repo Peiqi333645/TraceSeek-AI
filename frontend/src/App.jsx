@@ -224,12 +224,11 @@ export default function App() {
                   <i className="ti ti-player-play" />
                   运行全部条件
                 </button>
-                {watchList.length > 0 && <div className="run-sep" />}
-                {watchList.map((w) => (
+                {watchList.some((w) => w.enabled) && <div className="run-sep" />}
+                {watchList.filter((w) => w.enabled).map((w) => (
                   <button key={w.id} onClick={() => run(w.name)} title={(w.keywords || []).join(' ')}>
                     <i className="ti ti-target" />
                     {w.name}
-                    {w.enabled === false && <span className="run-off">已停用</span>}
                   </button>
                 ))}
               </div>
@@ -296,8 +295,9 @@ export default function App() {
             element={<Recommendations refreshKey={refreshKey} onToast={showToast} dropsToday={stats.drops_today} />}
           />
           <Route path="/favorites" element={<Drops refreshKey={refreshKey} />} />
-          <Route path="/watches" element={<Watches onChanged={() => {
-            api.watches().then(setWatchList).catch(() => {})
+          <Route path="/watches" element={<Watches onChanged={(next) => {
+            if (next) setWatchList(next)
+            else api.watches().then(setWatchList).catch(() => {})
             setRefreshKey((k) => k + 1)
           }} />} />
           <Route path="/settings" element={<Settings status={status} />} />

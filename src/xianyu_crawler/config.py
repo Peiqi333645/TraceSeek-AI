@@ -28,6 +28,7 @@ class Watch(BaseModel):
     price_min: float | None = None
     price_max: float | None = None
     city: str | None = None
+    district: str | None = None
     condition: list[str] | None = None
     free_shipping: bool | None = None
     seller_min_credit: int | None = None

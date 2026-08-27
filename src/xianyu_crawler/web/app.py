@@ -51,14 +51,21 @@ def api_create_watch(body: dto.WatchIn, _: None = Depends(require_login), s: Ses
 
 @app.put("/api/watches/{wid}", response_model=dto.WatchOut)
 def api_update_watch(wid: int, body: dto.WatchIn, _: None = Depends(require_login), s: Session = Depends(get_db)):
+    previous = repo.get_watch(s, wid)
+    previous_name = previous.name if previous else None
     row = repo.update_watch(s, wid, **dto.watchin_to_fields(body))
     if row is None:
         raise HTTPException(404, "watch not found")
+    if previous_name:
+        repo.hide_recommendations_for_watch(s, previous_name)
     return dto.watchrow_to_out(row)
 
 
 @app.delete("/api/watches/{wid}")
 def api_delete_watch(wid: int, _: None = Depends(require_login), s: Session = Depends(get_db)):
+    previous = repo.get_watch(s, wid)
+    if previous:
+        repo.hide_recommendations_for_watch(s, previous.name)
     repo.delete_watch(s, wid)
     return {"ok": True}
 

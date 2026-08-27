@@ -90,6 +90,177 @@ def _click_next_page(page) -> bool:
     }"""))
 
 
+def _click_exact_text(page, text: str) -> bool:
+    """点击页面上最小的可见精确文本节点，供闲鱼原生地区面板使用。"""
+    return bool(page.evaluate(r"""target => {
+      const norm = value => (value || '').replace(/\s+/g, ' ').trim();
+      const visible = el => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      };
+      const nodes = [...document.querySelectorAll('button,[role="button"],li,a,span,div')]
+        .filter(el => visible(el) && norm(el.textContent) === norm(target))
+        .sort((a, b) => {
+          const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+          const ap = /^(BUTTON|A|LI)$/.test(a.tagName) || a.getAttribute('role') === 'button' ? 0 : 1;
+          const bp = /^(BUTTON|A|LI)$/.test(b.tagName) || b.getAttribute('role') === 'button' ? 0 : 1;
+          return ap - bp || ar.width * ar.height - br.width * br.height;
+        });
+      if (!nodes.length) return false;
+      nodes[0].click();
+      return true;
+    }""", text))
+
+
+def _click_location_text(page, text: str) -> bool:
+    """地区名称兼容“杭州/杭州市”“上城/上城区”等常见写法。"""
+    value = text.strip()
+    variants = [value]
+    for suffix in ("特别行政区", "自治区", "自治州", "地区", "城市", "市", "区", "县"):
+        if value.endswith(suffix) and len(value) > len(suffix):
+            variants.append(value[:-len(suffix)])
+    for candidate in dict.fromkeys(variants):
+        if _click_exact_text(page, candidate):
+            return True
+    return False
+
+
+def _wait_for_new_page(page, captured: list[dict], before: int, cancelled=None,
+                       timeout_steps: int = 50) -> bool:
+    for _ in range(timeout_steps):
+        if cancelled and cancelled():
+            return False
+        page.wait_for_timeout(100)
+        if len(captured) > before:
+            return True
+    return False
+
+
+def _click_filter_apply(page) -> bool:
+    """点击筛选面板底部的“查看N件宝贝/确定/应用筛选”。"""
+    return bool(page.evaluate(r"""() => {
+      const visible = el => {
+        const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const nodes = [...document.querySelectorAll('button,[role="button"],a')].filter(el => {
+        const text = (el.textContent || '').replace(/\s+/g, '').trim();
+        return visible(el) && (/查看\d*件?宝贝/.test(text) || /^(确定|应用筛选|查看全部)$/.test(text));
+      });
+      if (!nodes.length) return false;
+      nodes[0].click();
+      return true;
+    }"""))
+
+
+def _apply_native_price(page, watch: Watch, captured: list[dict],
+                        captured_ids: list[frozenset[str]], cancelled=None) -> bool:
+    """在闲鱼页面填写原生最低/最高价，让分页基于价格筛选后的结果。"""
+    if watch.price_min is None and watch.price_max is None:
+        return True
+    previous = list(captured)
+    previous_ids = list(captured_ids)
+    changed = page.evaluate(r"""values => {
+      const visible = el => {
+        const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      let inputs = [...document.querySelectorAll('input')].filter(el => visible(el) && (
+        el.type === 'number' || /最低|最高|价格|¥|￥/.test(el.placeholder || '')
+      ));
+      if (inputs.length < 2) return false;
+      inputs = inputs.slice(0, 2);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      [values.min, values.max].forEach((value, index) => {
+        if (value === null || value === undefined) return;
+        setter.call(inputs[index], String(value));
+        inputs[index].dispatchEvent(new Event('input', { bubbles: true }));
+        inputs[index].dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      inputs[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      inputs[1].dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+      inputs[1].blur();
+      return true;
+    }""", {"min": watch.price_min, "max": watch.price_max})
+    if not changed:
+        return False
+    captured.clear()
+    captured_ids.clear()
+    if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=15)
+            or (_click_filter_apply(page)
+                and _wait_for_new_page(page, captured, 0, cancelled))):
+        return True
+    captured[:] = previous
+    captured_ids[:] = previous_ids
+    return False
+
+
+def _apply_native_conditions(page, watch: Watch, captured: list[dict],
+                             captured_ids: list[frozenset[str]], cancelled=None) -> bool:
+    """尽量使用闲鱼原生成色筛选；页面版本不支持时仍由本地精确过滤兜底。"""
+    if not watch.condition:
+        return True
+    previous = list(captured)
+    previous_ids = list(captured_ids)
+    if not _click_exact_text(page, "筛选"):
+        return False
+    page.wait_for_timeout(250)
+    clicked = False
+    for label in watch.condition:
+        clicked = _click_exact_text(page, label) or clicked
+    if not clicked:
+        return False
+    captured.clear()
+    captured_ids.clear()
+    applied = _click_filter_apply(page)
+    if applied and _wait_for_new_page(page, captured, 0, cancelled):
+        return True
+    captured[:] = previous
+    captured_ids[:] = previous_ids
+    return False
+
+
+def _apply_native_location(page, watch: Watch, captured: list[dict],
+                           captured_ids: list[frozenset[str]], cancelled=None) -> bool:
+    """使用闲鱼网页自身的区域筛选，支持城市和区县。
+
+    只有最终地区选择产生了新的搜索结果才返回成功；避免设置杭州却继续展示全国结果。
+    """
+    city = (watch.city or "").strip()
+    district = (watch.district or "").strip()
+    if not city and not district:
+        return True
+    if not _click_exact_text(page, "区域"):
+        return False
+    page.wait_for_timeout(250)
+    captured.clear()
+    captured_ids.clear()
+    target = city or district
+    if not _click_location_text(page, target):
+        return False
+    city_applied = _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=8)
+    if district:
+        # 城市选择后面板可能保持打开，也可能收起；两种页面都兼容。
+        captured.clear()
+        captured_ids.clear()
+        if not _click_location_text(page, district):
+            if not _click_exact_text(page, "区域"):
+                return False
+            page.wait_for_timeout(200)
+            if not _click_location_text(page, district):
+                return False
+        if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=8)
+                or (_click_filter_apply(page)
+                    and _wait_for_new_page(page, captured, 0, cancelled))):
+            return True
+        return False
+    if city_applied:
+        return True
+    return bool(_click_filter_apply(page)
+                and _wait_for_new_page(page, captured, 0, cancelled))
+
+
 def parse_search_json(raw: dict) -> list[Item]:
     out: list[Item] = []
     seen: set[str] = set()
@@ -170,6 +341,15 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
             if cancelled and cancelled():
                 return []
             page.wait_for_timeout(100)
+        # 原生筛选顺序与用户在闲鱼页面操作一致：先价格，再地区，再成色。
+        # 价格/成色面板在不同灰度版本可能缺少；此时保留本地规则兜底。
+        _apply_native_price(page, watch, captured, captured_ids, cancelled)
+        if (watch.city or watch.district) and not _apply_native_location(
+                page, watch, captured, captured_ids, cancelled):
+            # 地区控件未成功时不能退回全国结果，否则会再次出现“杭州条件推荐广东”。
+            place = " / ".join(x for x in (watch.city, watch.district) if x)
+            raise RuntimeError(f"闲鱼地区筛选未能应用：{place}。请按闲鱼地区面板中的名称填写")
+        _apply_native_conditions(page, watch, captured, captured_ids, cancelled)
         n = len(captured)
         start_page = max(1, int(start_page))
         max_pages = max(1, int(max_pages))

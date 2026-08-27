@@ -7,15 +7,17 @@ import { yuan, fmtDate, fmtDateTime, ago } from '../util'
 export default function Recommendations({ refreshKey, onToast, dropsToday = 0 }) {
   const [items, setItems] = useState(null)
   const [cfg, setCfg] = useState(null)
+  const [watches, setWatches] = useState([])
   const [busy, setBusy] = useState({})
   const [muteOpen, setMuteOpen] = useState(null)
   const [onlyPassed, setOnlyPassed] = useState(true)
   const [sort, setSort] = useState('newest')
   const [activeWatch, setActiveWatch] = useState(null)
 
-  const load = () => Promise.all([api.recommendations('new'), api.config()]).then(([xs, c]) => {
+  const load = () => Promise.all([api.recommendations('new'), api.config(), api.watches()]).then(([xs, c, ws]) => {
     setItems(xs)
     setCfg(c)
+    setWatches(ws)
     if (!c.review_enabled) setOnlyPassed(false)
   })
   useEffect(() => {
@@ -123,8 +125,10 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
 
   if (items === null || cfg === null) return <Spinner />
 
-  const passedCount = items.filter((x) => x.rec_ok === true).length
-  const filtered = onlyPassed ? items.filter((x) => x.rec_ok === true) : items
+  const enabledNames = new Set(watches.filter((w) => w.enabled).map((w) => w.name))
+  const currentItems = items.filter((x) => enabledNames.has(x.watch_name))
+  const passedCount = currentItems.filter((x) => x.rec_ok === true).length
+  const filtered = onlyPassed ? currentItems.filter((x) => x.rec_ok === true) : currentItems
   const shown = [...filtered].sort((a, b) => {
     if (sort === 'price-asc') return Number(a.price || 0) - Number(b.price || 0)
     return String(b.rec_created_at || '').localeCompare(String(a.rec_created_at || ''))
@@ -153,14 +157,14 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
         </Link>
       </h1>
       <p className="page-sub">自动发现符合条件的新商品。AI精选只显示智能判断更符合要求的结果。</p>
-      {items.length > 0 && (
+      {currentItems.length > 0 && (
         <div className="rec-toolbar">
           <div className="rec-filter">
             <button disabled={!cfg.review_enabled} className={`seg${onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(true)}>
               AI精选 <b>{passedCount}</b>
             </button>
             <button className={`seg${!onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(false)}>
-              所有候选 <b>{items.length}</b>
+              所有候选 <b>{currentItems.length}</b>
             </button>
           </div>
           <div className="rec-tools">
@@ -174,10 +178,10 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
       )}
       {shown.length === 0 ? (
         <EmptyState
-          title={onlyPassed && items.length > 0 ? '暂无AI精选商品' : '暂无新推荐'}
+          title={onlyPassed && currentItems.length > 0 ? '暂无AI精选商品' : '暂无新推荐'}
           sub={
-            onlyPassed && items.length > 0
-              ? `还有 ${items.length} 条候选商品，可点击「所有候选」查看`
+            onlyPassed && currentItems.length > 0
+              ? `还有 ${currentItems.length} 条候选商品，可点击「所有候选」查看`
               : '定时任务会按你的条件自动发现新商品'
           }
         />

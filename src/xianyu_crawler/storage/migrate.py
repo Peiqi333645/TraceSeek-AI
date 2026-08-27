@@ -22,6 +22,7 @@ COLUMNS: list[tuple[str, str, str]] = [
     ("items", "browse_count", "INTEGER"),
     ("items", "collect_count", "INTEGER"),
     ("watches", "requirement", "TEXT"),
+    ("watches", "district", "TEXT"),
     ("app_config", "review_model", "TEXT NOT NULL DEFAULT 'doubao-seed-2.0-pro'"),
     ("app_config", "favorites_minutes", "INTEGER NOT NULL DEFAULT 30"),
     ("app_config", "review_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
@@ -62,13 +63,20 @@ def ensure_columns(db_path: str | Path) -> int:
         return 0
     con = sqlite3.connect(path)
     added = 0
+    search_logic_upgrade = False
     try:
         for table, col, ddl in COLUMNS:
             existing = _cols(con, table)
             if not existing or col in existing:
                 continue
             con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+            if table == "watches" and col == "district":
+                search_logic_upgrade = True
             added += 1
+        # 本版本改变了关键词、价格和原生地区筛选。升级时清除旧规则产生的
+        # 待审快照，避免用户安装新版后仍看到广东/超价/错型号历史商品。
+        if search_logic_upgrade and _cols(con, "items"):
+            con.execute("UPDATE items SET rec_status='filtered' WHERE rec_status='new'")
         con.commit()
     finally:
         con.close()
