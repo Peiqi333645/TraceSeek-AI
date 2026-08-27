@@ -31,3 +31,35 @@ def test_parse_search_sample():
     assert it.free_shipping is True
     assert it.condition == "99新"
     assert it.url == "https://www.goofish.com/item?id=111"
+
+
+def test_mixed_old_and_new_card_shapes_are_merged():
+    """命中旧卡片不能导致同页新结构卡片被整体跳过。"""
+    raw = {
+        "data": {
+            "resultList": [{"data": {"item": {"main": {
+                "exContent": {"itemId": "old", "title": "康泰时 G1 老结构",
+                              "detailParams": {"soldPrice": "2300"}}
+            }}}}],
+            "grayCardPayload": {
+                "itemId": "new", "title": "康泰时 G1 新结构", "priceText": "2999"
+            },
+        }
+    }
+    items = parse_search_json(raw)
+    assert {item.item_id for item in items} == {"old", "new"}
+
+
+def test_current_rich_text_price_and_target_url_are_parsed():
+    raw = {"data": {"resultList": [{"data": {"item": {"main": {
+        "targetUrl": "fleamarket://item?id=987654321",
+        "exContent": {
+            "title": "康泰时 G1 绿标机身",
+            "price": [{"text": "当前价"}, {"text": "¥"}, {"text": "2,999"}],
+            "area": "杭州",
+        },
+    }}}}]}}
+    items = parse_search_json(raw)
+    assert len(items) == 1
+    assert items[0].item_id == "987654321"
+    assert items[0].price == 2999

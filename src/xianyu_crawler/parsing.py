@@ -33,10 +33,25 @@ _COND_RE = re.compile(r"(全新|几乎全新|准新|[一二三四五六七八九
 
 
 def to_price(v: object) -> float | None:
-    if v is None or isinstance(v, (list, dict, bool)):
+    if v is None or isinstance(v, bool):
         return None
+    # 当前 PC 搜索接口的 exContent.price 经常是富文本分段：
+    # [{"text":"当前价"},{"text":"¥"},{"text":"2,999"}]。
+    # 旧版直接拒绝 list/dict，导致整页商品全部因“无价格”被丢弃。
+    if isinstance(v, list):
+        parts = []
+        for part in v:
+            if isinstance(part, dict):
+                parts.append(str(part.get("text") or part.get("value") or ""))
+            elif part is not None:
+                parts.append(str(part))
+        v = "".join(parts)
+    elif isinstance(v, dict):
+        v = v.get("text") or v.get("value") or v.get("price")
+        if v is None:
+            return None
     try:
-        text = str(v).replace("¥", "").replace("￥", "").replace(",", "").strip()
+        text = str(v).replace("当前价", "").replace("¥", "").replace("￥", "").replace(",", "").strip()
         multiplier = 10000 if text.endswith("万") else 1
         if multiplier != 1:
             text = text[:-1].strip()
