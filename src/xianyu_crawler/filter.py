@@ -49,7 +49,10 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
 
 
 def matches(item: Item, watch: Watch) -> bool:
-    if not keyword_matches(item.title, watch.keywords):
+    native = bool((item.raw or {}).get("_xianyu_native_search"))
+    # 原生搜索返回的集合就是闲鱼网页对该关键词的判定结果。再次要求标题逐字
+    # 包含关键词会删掉平台纠错/别名/语义命中的商品，造成软件数量少于网页。
+    if not native and not keyword_matches(item.title, watch.keywords):
         return False
     if watch.price_min is not None and item.price < watch.price_min:
         return False

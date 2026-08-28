@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from xianyu_crawler.search import parse_search_json, normalize_search_query, _native_condition
+from xianyu_crawler.config import Watch
+from xianyu_crawler.search import (
+    parse_search_json, normalize_search_query, _native_condition, build_search_payload, search,
+)
 
 
 def test_search_query_applies_same_correction_as_goofish_web():
@@ -63,3 +66,56 @@ def test_current_rich_text_price_and_target_url_are_parsed():
     assert len(items) == 1
     assert items[0].item_id == "987654321"
     assert items[0].price == 2999
+
+
+def test_native_payload_matches_goofish_price_and_hangzhou_filters():
+    watch = Watch(name="康泰时 G1", keywords=["康泰时 G1"],
+                  price_min=2000, price_max=4000, city="杭州")
+    payload = build_search_payload("康泰时 G1", watch, 1)
+    assert payload["keyword"] == "康泰时 G1"
+    assert payload["rowsPerPage"] == 30
+    assert payload["propValueStr"]["searchFilter"] == "priceRange:2000,4000;"
+    extra = json.loads(payload["extraFilterValue"])
+    assert extra["divisionList"] == [{"province": "", "city": "杭州"}]
+    assert payload["sortField"] == payload["sortValue"] == ""
+
+
+def test_native_search_reported_eleven_returns_eleven_unique_items():
+    cards = [{"data": {"item": {"main": {
+        "targetUrl": f"fleamarket://item?id={1000 + n}",
+        "exContent": {"title": f"康泰时 G1 杭州样本 {n + 1}",
+                      "price": [{"text": "¥"}, {"text": str(2000 + n * 100)}],
+                      "area": "杭州"},
+    }}}} for n in range(11)]
+    raw = {"ret": ["SUCCESS::调用成功"], "data": {
+        "resultInfo": {"totalCount": 11, "hasNextPage": False}, "resultList": cards}}
+
+    class Response:
+        status = 200
+        def json(self):
+            return raw
+
+    class Request:
+        def post(self, *args, **kwargs):
+            return Response()
+
+    class Page:
+        def goto(self, *args, **kwargs):
+            return None
+        def wait_for_timeout(self, *args):
+            return None
+        def close(self):
+            return None
+
+    class Context:
+        request = Request()
+        def new_page(self):
+            return Page()
+        def cookies(self, *args):
+            return [{"name": "_m_h5_tk", "value": "token_123"}]
+
+    watch = Watch(name="康泰时 G1", keywords=["康泰时 G1"],
+                  price_min=2000, price_max=4000, city="杭州")
+    items = search(Context(), watch, max_pages=5)
+    assert len(items) == 11
+    assert len({item.item_id for item in items}) == 11

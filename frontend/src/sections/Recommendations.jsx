@@ -10,7 +10,9 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
   const [watches, setWatches] = useState([])
   const [busy, setBusy] = useState({})
   const [muteOpen, setMuteOpen] = useState(null)
-  const [onlyPassed, setOnlyPassed] = useState(true)
+  // 默认展示闲鱼原生搜索得到的全部候选；AI 精选只能由用户主动切换，
+  // 不能让“闲鱼返回 11 件”在推荐页看起来只剩寥寥几件。
+  const [onlyPassed, setOnlyPassed] = useState(false)
   const [sort, setSort] = useState('newest')
   const [activeWatch, setActiveWatch] = useState(null)
 
@@ -28,7 +30,7 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
     const next = { ...cfg, review_enabled: enabled, smtp_pass: null, review_api_token: null }
     const saved = await api.saveConfig(next)
     setCfg(saved)
-    setOnlyPassed(enabled)
+    if (!enabled) setOnlyPassed(false)
     onToast?.(enabled ? '已开启AI智能筛选' : '已关闭AI筛选，将显示所有候选商品')
   }
 

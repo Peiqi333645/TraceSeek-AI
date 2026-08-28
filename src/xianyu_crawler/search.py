@@ -7,7 +7,10 @@ watch.keywords 是**一个**搜索词的若干词块, 用空格拼成一条 quer
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import time
 from urllib.parse import quote
 
 from .config import Watch
@@ -15,6 +18,8 @@ from .models import Item
 from .parsing import to_price, guess_condition, to_dt_ms, items_from_json
 SEARCH_URL = "https://www.goofish.com/search"
 SEARCH_API = "mtop.taobao.idlemtopsearch.pc.search"
+MTOP_URL = f"https://h5api.m.goofish.com/h5/{SEARCH_API}/1.0/"
+MTOP_APP_KEY = "34839810"
 CONDITION_LABELS = (
     "包装脏污/变形/破损", "轻微划痕/脏污", "轻微使用痕迹", "明显使用痕迹",
     "仅拆封未使用", "几乎全新", "无原包装", "官翻机", "全新",
@@ -24,6 +29,77 @@ CONDITION_LABELS = (
 def normalize_search_query(query: str) -> str:
     """补齐网页端具备、直接接口搜索不具备的少量确定性纠错。"""
     return query.replace("康时泰", "康泰时")
+
+
+def build_search_payload(query: str, watch: Watch, page_number: int) -> dict:
+    """构造与闲鱼 PC 搜索页相同的筛选请求体。
+
+    价格走 ``propValueStr.searchFilter``，地区走
+    ``extraFilterValue.divisionList``；不再通过不稳定的页面 DOM 点击筛选。
+    """
+    search_filters: list[str] = []
+    if watch.price_min is not None or watch.price_max is not None:
+        low = 0 if watch.price_min is None else watch.price_min
+        high = 99999999 if watch.price_max is None else watch.price_max
+        search_filters.append(f"priceRange:{low:g},{high:g}")
+    place = (watch.district or watch.city or "").strip()
+    extra = "{}"
+    if place:
+        extra = json.dumps({
+            "divisionList": [{"province": "", "city": place}],
+            "excludeMultiPlacesSellers": "0",
+            "extraDivision": "",
+        }, ensure_ascii=False, separators=(",", ":"))
+    return {
+        "pageNumber": int(page_number),
+        "keyword": query,
+        "fromFilter": bool(search_filters or place),
+        "rowsPerPage": 30,
+        # 与截图中的“综合”排序一致，不擅自改成最新发布。
+        "sortValue": "",
+        "sortField": "",
+        "customDistance": "",
+        "gps": "",
+        "propValueStr": {"searchFilter": ";".join(search_filters) + (";" if search_filters else "")},
+        "customGps": "",
+        "searchReqFromPage": "pcSearch",
+        "extraFilterValue": extra,
+        "userPositionJson": "{}",
+    }
+
+
+def _cookie_value(ctx, name: str) -> str:
+    for cookie in ctx.cookies("https://www.goofish.com"):
+        if cookie.get("name") == name and cookie.get("value"):
+            return str(cookie["value"])
+    return ""
+
+
+def _native_search_request(ctx, payload: dict) -> dict:
+    """使用当前登录态直接调用闲鱼 PC 搜索接口，返回原始 JSON。"""
+    token_cookie = _cookie_value(ctx, "_m_h5_tk")
+    if not token_cookie:
+        raise RuntimeError("闲鱼搜索令牌缺失，请重新登录后再运行")
+    token = token_cookie.split("_", 1)[0]
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    stamp = int(time.time() * 1000)
+    sign = hashlib.md5(
+        f"{token}&{stamp}&{MTOP_APP_KEY}&{data}".encode("utf-8")
+    ).hexdigest()
+    params = {
+        "jsv": "2.7.2", "appKey": MTOP_APP_KEY, "t": str(stamp), "sign": sign,
+        "v": "1.0", "type": "originaljson", "accountSite": "xianyu",
+        "dataType": "json", "timeout": "20000", "api": SEARCH_API,
+        "sessionOption": "AutoLoginOnly", "spm_cnt": "a21ybx.search.0.0",
+    }
+    response = ctx.request.post(
+        MTOP_URL, params=params, form={"data": data},
+        headers={"Referer": "https://www.goofish.com/search"}, timeout=20000)
+    raw = response.json()
+    ret = raw.get("ret") or []
+    if not any(str(value).startswith("SUCCESS") for value in ret):
+        raise RuntimeError(f"闲鱼原生搜索接口返回失败：{' / '.join(map(str, ret)) or response.status}")
+    return raw
 
 
 def _native_condition(node: object, title: str) -> str | None:
@@ -53,6 +129,21 @@ def _has_next_page(raw: dict) -> bool | None:
     if "hasNextPage" not in info:
         return None
     return bool(info.get("hasNextPage"))
+
+
+def _reported_total(raw: dict) -> int | None:
+    """读取闲鱼响应报告的总商品数（字段灰度兼容）。"""
+    data = (raw or {}).get("data") or {}
+    info = data.get("resultInfo") or {}
+    for value in (info.get("totalCount"), info.get("totalResults"),
+                  data.get("totalCount"), data.get("totalResults")):
+        try:
+            number = int(str(value))
+        except (TypeError, ValueError):
+            continue
+        if number >= 0:
+            return number
+    return None
 
 
 def _click_next_page(page) -> bool:
@@ -361,103 +452,54 @@ def _items_from_dom(page) -> list[Item]:
 
 def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
            start_page: int = 1, progress=None, cancelled=None) -> list[Item]:
-    """搜索连续页面。
+    """用闲鱼 PC 原生搜索请求读取连续页面。
 
-    ``start_page=1, max_pages=5`` 读取 1–5 页；``start_page=6`` 读取 6–10 页。
-    闲鱼网页使用滚动懒加载，因此深页仍需从顶部滚动到目标页，但只解析目标区间。
+    页面只用于建立与用户网页相同的登录态和 mtop token；关键词、价格、地区、
+    页码全部写入官方搜索请求体，因此不会再出现 DOM 点错地区或重复第一页。
     """
-    captured: list[dict] = []
-    captured_ids: list[frozenset[str]] = []
     page = ctx.new_page()
-
-    def _on_response(resp) -> None:
-        # 不要求 API 名后必须紧跟斜杠：闲鱼灰度域名/版本曾出现 /1.0/ 与 ? 两种形式。
-        if SEARCH_API in resp.url.lower():
-            try:
-                raw = resp.json()
-                ids = frozenset(it.item_id for it in parse_search_json(raw))
-                # 同一页可能因组件刷新重复请求。只有包含商品且商品集合发生变化的
-                # 响应才算成功翻到新页，避免把第一页重复计算成 2–5 页。
-                if ids and (not captured_ids or ids != captured_ids[-1]):
-                    captured.append(raw)
-                    captured_ids.append(ids)
-            except Exception:
-                pass
-
-    page.on("response", _on_response)
+    out: list[Item] = []
+    seen: set[str] = set()
     try:
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         query = normalize_search_query(query)
         page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
-        # 等到接口或页面商品卡片真正出现。旧版只等 5 秒，慢网会直接得到空列表。
-        for _ in range(150):
-            if captured:
+        # 等待网页生成与当前账号一致的 mtop token。
+        for _ in range(100):
+            if _cookie_value(ctx, "_m_h5_tk"):
                 break
             if cancelled and cancelled():
                 return []
             page.wait_for_timeout(100)
-        # 不能再依赖“区域/筛选”按钮的 DOM 结构。按钮改版时旧代码会抛异常并
-        # 丢弃已经抓到的全部结果，甚至用户清空地区后仍可能卡在旧面板状态。
-        # 先可靠收集关键词结果，价格和成色统一由 filter.matches 处理；地区字段
-        # 缢失时保留候选，不把真实商品误删。
-        dom_pages: list[list[Item]] = [_items_from_dom(page)]
-        n = len(captured)
         start_page = max(1, int(start_page))
         max_pages = max(1, int(max_pages))
         end_page = start_page + max_pages - 1
-        if progress:
-            progress(1, end_page)
-        for page_no in range(2, end_page + 1):
+        for done, page_no in enumerate(range(start_page, end_page + 1), start=1):
             if cancelled and cancelled():
                 break
-            # 灰度接口有时不返回 hasNextPage；缺字段时仍尝试点击网页分页按钮。
-            if captured and _has_next_page(captured[-1]) is False:
-                break
-            # 新版网页必须点击“下一页”，滚动不会翻页。最多重试一次；并以新的
-            # 商品 ID 集合为成功标准，而不是只看网络请求数量。
-            advanced = False
-            before_dom_ids = frozenset(it.item_id for it in dom_pages[-1])
-            next_dom: list[Item] = []
-            for _attempt in range(2):
-                if not _click_next_page(page):
-                    break
-                for _step in range(50):
-                    if cancelled and cancelled():
-                        break
-                    page.wait_for_timeout(100)
-                    if len(captured) > n:
-                        advanced = True
-                        break
-                    # 即使搜索接口结构暂时无法解析，也用网页卡片 ID 确认翻页成功。
-                    if _step % 5 == 4:
-                        candidate_dom = _items_from_dom(page)
-                        candidate_ids = frozenset(it.item_id for it in candidate_dom)
-                        if candidate_ids and candidate_ids != before_dom_ids:
-                            next_dom = candidate_dom
-                            advanced = True
-                            break
-                if advanced:
-                    break
-            if not advanced:             # 页码未变化或只返回重复第一页 → 停
-                break
-            n = len(captured)
-            dom_pages.append(next_dom or _items_from_dom(page))
+            raw = _native_search_request(ctx, build_search_payload(query, watch, page_no))
+            page_items = parse_search_json(raw)
+            reported_total = _reported_total(raw)
+            # 对于不足一页的搜索（如用户实测杭州 11 件），解析数必须与闲鱼报告
+            # 的总数完全相等；否则宁可明确报错，也不能静默交付“只显示几件”。
+            if page_no == 1 and reported_total is not None and reported_total <= 30:
+                parsed_ids = {item.item_id for item in page_items}
+                if len(parsed_ids) != reported_total:
+                    raise RuntimeError(
+                        f"闲鱼返回 {reported_total} 件，但软件只完整解析 {len(parsed_ids)} 件；"
+                        "本轮已停止入库，避免显示不完整结果")
+            for item in page_items:
+                if item.item_id in seen:
+                    continue
+                seen.add(item.item_id)
+                # 告诉规则层：关键词、价格、地区已经由闲鱼原生搜索执行，禁止再
+                # 用标题/残缺地址二次删减，否则无法与网页结果集合保持一致。
+                item.raw = {**(item.raw or {}), "_xianyu_native_search": True}
+                out.append(item)
             if progress:
-                progress(page_no, end_page)
+                progress(done, max_pages)
+            if _has_next_page(raw) is False:
+                break
     finally:
         page.close()
-
-    out: list[Item] = []
-    seen: set[str] = set()
-    for raw in captured[start_page - 1:start_page - 1 + max_pages]:
-        for it in parse_search_json(raw):
-            if it.item_id not in seen:
-                seen.add(it.item_id)
-                out.append(it)
-    # API 解析与 DOM 兜底取并集，不能因为 API 只识别出少数旧卡片就丢掉网页卡片。
-    for page_items in dom_pages[start_page - 1:start_page - 1 + max_pages]:
-        for it in page_items:
-            if it.item_id not in seen:
-                seen.add(it.item_id)
-                out.append(it)
     return out
