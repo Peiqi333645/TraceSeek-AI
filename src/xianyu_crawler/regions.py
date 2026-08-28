@@ -23,7 +23,11 @@ _HANGZHOU_DISTRICTS = {
 def normalize_region(province: str | None, city: str | None,
                      district: str | None) -> tuple[str, str, str]:
     """去掉省市后缀，并为明确可识别的市/区补齐上级地区。"""
-    p = (province or "").strip().removesuffix("省").removesuffix("市")
+    p = (province or "").strip()
+    for suffix in ("特别行政区", "壮族自治区", "回族自治区", "维吾尔自治区", "自治区", "省", "市"):
+        if p.endswith(suffix):
+            p = p.removesuffix(suffix)
+            break
     c = (city or "").strip().removesuffix("市")
     d = (district or "").strip()
     if not c and d in _HANGZHOU_DISTRICTS:

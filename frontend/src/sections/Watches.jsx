@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Card, Button, Badge, Spinner, EmptyState, Toggle, Field } from '../components/ui'
 import { splitCsv } from '../util'
+import REGION_TREE from '../data/china-regions.json'
 
 const CONDITION_OPTIONS = [
   '全新', '几乎全新', '轻微使用痕迹',
@@ -9,15 +10,26 @@ const CONDITION_OPTIONS = [
   '官翻机', '包装脏污/变形/破损', '轻微划痕/脏污',
 ]
 
-const PROVINCES = ['北京', '天津', '上海', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江',
-  '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南',
-  '四川', '贵州', '云南', '陕西', '甘肃', '青海', '内蒙古', '广西', '西藏', '宁夏', '新疆',
-  '香港', '澳门', '台湾']
-const CITY_PROVINCE = { 杭州: '浙江', 宁波: '浙江', 温州: '浙江', 嘉兴: '浙江', 湖州: '浙江',
-  绍兴: '浙江', 金华: '浙江', 衢州: '浙江', 舟山: '浙江', 台州: '浙江', 丽水: '浙江' }
-const ZHEJIANG_CITIES = Object.keys(CITY_PROVINCE)
-const HANGZHOU_DISTRICTS = ['上城区', '拱墅区', '西湖区', '滨江区', '萧山区', '余杭区',
-  '临平区', '钱塘区', '富阳区', '临安区', '桐庐县', '淳安县', '建德市']
+const cleanProvince = (name = '') => name
+  .replace(/特别行政区$/, '')
+  .replace(/(?:壮族|回族|维吾尔)自治区$/, '')
+  .replace(/自治区$/, '')
+  .replace(/[省市]$/, '')
+const cleanCity = (name = '') => name.replace(/市$/, '')
+const usable = (node) => node?.n && !['市辖区', '县'].includes(node.n)
+const provinceValue = (node) => cleanProvince(node?.n)
+
+// 直辖市在行政区划数据中没有“市”这一层，界面仍按闲鱼的省→市→区三级
+// 展示：第二级使用直辖市自身，第三步再列出各区县。
+const cityNodes = (province) => {
+  const children = (province?.d || []).filter(usable)
+  if (!children.length) return []
+  if (children.some((node) => Array.isArray(node.d))) return children.filter((node) => Array.isArray(node.d))
+  return [{ c: `${province.c}-city`, n: province.n, d: children }]
+}
+const cityValue = (node) => cleanCity(node?.n)
+const findProvince = (value) => REGION_TREE.find((node) => provinceValue(node) === cleanProvince(value))
+const findCity = (province, value) => cityNodes(province).find((node) => cityValue(node) === cleanCity(value))
 
 const blank = () => ({
   id: null,
@@ -48,6 +60,10 @@ export default function Watches({ onChanged }) {
   }, [])
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const selectedProvince = findProvince(form.province)
+  const cities = cityNodes(selectedProvince)
+  const selectedCity = findCity(selectedProvince, form.city)
+  const districts = (selectedCity?.d || []).filter(usable)
 
   const save = async () => {
     if (!form.name.trim() || !form.keywordsText.trim()) return
@@ -137,22 +153,33 @@ export default function Watches({ onChanged }) {
           <Field label="最高价">
             <input type="number" value={form.price_max} onChange={(e) => set('price_max', e.target.value)} />
           </Field>
-          <Field label="省份（可选）" hint="按闲鱼地区面板逐级选择">
-            <select value={form.province} onChange={(e) => set('province', e.target.value)}>
+          <Field label="省份（可选）" hint="第一步：选择省份">
+            <select value={form.province} onChange={(e) => {
+              setForm((f) => ({ ...f, province: e.target.value, city: '', district: '' }))
+            }}>
               <option value="">不限省份</option>
-              {PROVINCES.map((name) => <option key={name} value={name}>{name}</option>)}
+              {REGION_TREE.filter(usable).map((node) => (
+                <option key={node.c} value={provinceValue(node)}>{provinceValue(node)}</option>
+              ))}
             </select>
           </Field>
-          <Field label="城市（可选）" hint="输入已知城市会自动补齐省份">
-            <input list="city-options" value={form.city} onChange={(e) => {
-              const city = e.target.value
-              setForm((f) => ({ ...f, city, province: f.province || CITY_PROVINCE[city] || '' }))
-            }} placeholder="杭州" />
-            <datalist id="city-options">{ZHEJIANG_CITIES.map((name) => <option key={name} value={name} />)}</datalist>
+          <Field label="城市（可选）" hint={form.province ? '第二步：只显示该省的城市' : '请先选择省份'}>
+            <select
+              value={form.city}
+              disabled={!form.province}
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, district: '' }))}
+            >
+              <option value="">不限城市</option>
+              {cities.map((node) => (
+                <option key={node.c} value={cityValue(node)}>{cityValue(node)}</option>
+              ))}
+            </select>
           </Field>
-          <Field label="区县（可选）" hint="先填写城市，再填写区县；例如上城区">
-            <input list="district-options" value={form.district} onChange={(e) => set('district', e.target.value)} placeholder="上城区" />
-            <datalist id="district-options">{(form.city === '杭州' ? HANGZHOU_DISTRICTS : []).map((name) => <option key={name} value={name} />)}</datalist>
+          <Field label="区县（可选）" hint={form.city ? '第三步：只显示该市的区县' : '请先选择城市'}>
+            <select value={form.district} disabled={!form.city} onChange={(e) => set('district', e.target.value)}>
+              <option value="">不限区县</option>
+              {districts.map((node) => <option key={node.c} value={node.n}>{node.n}</option>)}
+            </select>
           </Field>
           <Field label="成色（可多选）" hint="采用闲鱼原生9档描述；不选择表示不限成色">
             <div className="condition-picker">
