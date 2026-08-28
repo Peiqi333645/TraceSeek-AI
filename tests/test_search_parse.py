@@ -7,6 +7,7 @@ import pytest
 from xianyu_crawler.config import Watch
 from xianyu_crawler.search import (
     parse_search_json, normalize_search_query, _native_condition, build_search_payload,
+    _wait_for_new_page,
 )
 
 
@@ -101,3 +102,13 @@ def test_native_search_reported_eleven_parses_eleven_unique_items():
     items = parse_search_json(raw)
     assert len(items) == 11
     assert len({item.item_id for item in items}) == 11
+
+
+def test_wait_accepts_real_dom_cards_when_search_response_is_cached():
+    class Page:
+        def wait_for_timeout(self, _):
+            return None
+        def evaluate(self, _):
+            return ["123", "456"]
+    assert _wait_for_new_page(Page(), [], 0, timeout_steps=1,
+                              before_dom=frozenset()) is True

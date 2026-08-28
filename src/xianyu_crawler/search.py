@@ -222,13 +222,28 @@ def _click_location_text(page, text: str) -> bool:
     return False
 
 
+def _dom_item_ids(page) -> frozenset[str]:
+    """读取当前页面卡片 ID；接口被缓存/复用时作为真实页面变化信号。"""
+    try:
+        values = page.evaluate(r"""() => [...document.querySelectorAll('a[href*="item"][href*="id="]')]
+          .map(a => { try { return new URL(a.href, location.href).searchParams.get('id') || ''; }
+                      catch (_) { return ''; } }).filter(Boolean)""") or []
+        return frozenset(str(value) for value in values)
+    except Exception:
+        return frozenset()
+
+
 def _wait_for_new_page(page, captured: list[dict], before: int, cancelled=None,
-                       timeout_steps: int = 50) -> bool:
+                       timeout_steps: int = 50,
+                       before_dom: frozenset[str] | None = None) -> bool:
     for _ in range(timeout_steps):
         if cancelled and cancelled():
             return False
         page.wait_for_timeout(100)
         if len(captured) > before:
+            return True
+        current_dom = _dom_item_ids(page)
+        if current_dom and (before_dom is None or current_dom != before_dom):
             return True
     return False
 
@@ -257,6 +272,7 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
         return True
     previous = list(captured)
     previous_ids = list(captured_ids)
+    previous_dom = _dom_item_ids(page)
     # 必须在操作前清空；旧版操作后清空，网络快时会把刚返回的新结果删掉。
     captured.clear()
     captured_ids.clear()
@@ -286,9 +302,11 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
         captured[:] = previous
         captured_ids[:] = previous_ids
         return False
-    if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=15)
+    if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50,
+                           before_dom=previous_dom)
             or (_click_filter_apply(page)
-                and _wait_for_new_page(page, captured, 0, cancelled))):
+                and _wait_for_new_page(page, captured, 0, cancelled,
+                                       before_dom=previous_dom))):
         return True
     captured[:] = previous
     captured_ids[:] = previous_ids
@@ -302,6 +320,7 @@ def _apply_native_conditions(page, watch: Watch, captured: list[dict],
         return True
     previous = list(captured)
     previous_ids = list(captured_ids)
+    previous_dom = _dom_item_ids(page)
     if not _click_exact_text(page, "筛选"):
         return False
     page.wait_for_timeout(250)
@@ -313,7 +332,8 @@ def _apply_native_conditions(page, watch: Watch, captured: list[dict],
     if not clicked:
         return False
     applied = _click_filter_apply(page)
-    if applied and _wait_for_new_page(page, captured, 0, cancelled):
+    if applied and _wait_for_new_page(page, captured, 0, cancelled,
+                                      before_dom=previous_dom):
         return True
     captured[:] = previous
     captured_ids[:] = previous_ids
@@ -332,6 +352,7 @@ def _apply_native_location(page, watch: Watch, captured: list[dict],
     if not _click_exact_text(page, "区域"):
         return False
     page.wait_for_timeout(250)
+    previous_dom = _dom_item_ids(page)
     captured.clear()
     captured_ids.clear()
     if province and not _click_location_text(page, province):
@@ -341,29 +362,35 @@ def _apply_native_location(page, watch: Watch, captured: list[dict],
         # 省份点击可能产生一次中间请求，不能把“浙江全省”当成“杭州”。
         captured.clear()
         captured_ids.clear()
+        previous_dom = _dom_item_ids(page)
     target = city or district
     if not _click_location_text(page, target):
         return False
-    city_applied = _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50)
+    city_applied = _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50,
+                                      before_dom=previous_dom)
     if district:
         # 城市选择后面板可能保持打开，也可能收起；两种页面都兼容。
         captured.clear()
         captured_ids.clear()
+        previous_dom = _dom_item_ids(page)
         if not _click_location_text(page, district):
             if not _click_exact_text(page, "区域"):
                 return False
             page.wait_for_timeout(200)
             if not _click_location_text(page, district):
                 return False
-        if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50)
+        if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50,
+                               before_dom=previous_dom)
                 or (_click_filter_apply(page)
-                    and _wait_for_new_page(page, captured, 0, cancelled))):
+                    and _wait_for_new_page(page, captured, 0, cancelled,
+                                           before_dom=previous_dom))):
             return True
         return False
     if city_applied:
         return True
     return bool(_click_filter_apply(page)
-                and _wait_for_new_page(page, captured, 0, cancelled))
+                and _wait_for_new_page(page, captured, 0, cancelled,
+                                       before_dom=previous_dom))
 
 
 def parse_search_json(raw: dict) -> list[Item]:
@@ -492,7 +519,8 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         query = normalize_search_query(query)
         page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
-        if not _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=150):
+        if not _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=150,
+                                  before_dom=frozenset()):
             raise RuntimeError("闲鱼网页没有返回搜索结果，请检查登录状态或稍后重试")
         if not _apply_native_price(page, watch, captured, captured_ids, cancelled):
             raise RuntimeError("闲鱼价格筛选没有生效，本轮已停止，未展示未筛选商品")
@@ -508,21 +536,24 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
         current_page = 1
         while current_page < start_page:
             previous_ids = captured_ids[-1] if captured_ids else frozenset()
+            previous_dom = _dom_item_ids(page)
             captured.clear(); captured_ids.clear()
-            if not _click_next_page(page) or not _wait_for_new_page(page, captured, 0, cancelled):
+            if not _click_next_page(page) or not _wait_for_new_page(
+                    page, captured, 0, cancelled, before_dom=previous_dom):
                 return out
-            if captured_ids and captured_ids[-1] == previous_ids:
+            if ((captured_ids and captured_ids[-1] == previous_ids)
+                    or (not captured_ids and _dom_item_ids(page) == previous_dom)):
                 raise RuntimeError("闲鱼翻页后仍返回上一页，本轮已停止，避免重复商品")
             current_page += 1
         for done in range(1, max_pages + 1):
             if cancelled and cancelled():
                 break
             page_no = current_page
-            if not captured:
-                raise RuntimeError(f"闲鱼第 {page_no} 页没有返回可解析数据")
-            raw = captured[-1]
-            page_items = parse_search_json(raw)
-            reported_total = _reported_total(raw)
+            raw = captured[-1] if captured else {}
+            page_items = parse_search_json(raw) if raw else _items_from_dom(page)
+            if not page_items:
+                raise RuntimeError(f"闲鱼第 {page_no} 页没有返回可解析商品")
+            reported_total = _reported_total(raw) if raw else None
             # 对于不足一页的搜索（如用户实测杭州 11 件），解析数必须与闲鱼报告
             # 的总数完全相等；否则宁可明确报错，也不能静默交付“只显示几件”。
             if page_no == 1 and reported_total is not None and reported_total <= 30:
@@ -544,10 +575,13 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
             if done >= max_pages or _has_next_page(raw) is False:
                 break
             previous_ids = frozenset(item.item_id for item in page_items)
+            previous_dom = _dom_item_ids(page)
             captured.clear(); captured_ids.clear()
-            if not _click_next_page(page) or not _wait_for_new_page(page, captured, 0, cancelled):
+            if not _click_next_page(page) or not _wait_for_new_page(
+                    page, captured, 0, cancelled, before_dom=previous_dom):
                 break
-            if captured_ids and captured_ids[-1] == previous_ids:
+            if ((captured_ids and captured_ids[-1] == previous_ids)
+                    or (not captured_ids and _dom_item_ids(page) == previous_dom)):
                 raise RuntimeError("闲鱼翻页后仍返回上一页，本轮已停止，避免重复商品")
             current_page += 1
     finally:
