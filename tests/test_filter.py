@@ -85,3 +85,10 @@ def test_native_search_still_requires_exact_model_relevance():
     item = I(title="CONTAX 旁轴绿标机身", price=2999, location="浙江",
              raw={"_xianyu_native_search": True})
     assert matches(item, watch) is False
+
+
+def test_camera_model_rejects_compatible_lens_and_brand_merchandise():
+    watch = W(keywords=["康泰时 G1"], price_min=2000, price_max=4000, city="杭州")
+    assert matches(I(title="康泰时+contax+g45/2 contax g1 g2可用", price=3580), watch) is False
+    assert matches(I(title="KITH联名款 康泰时 CONTAX G2/G1 时尚定制", price=2500), watch) is False
+    assert matches(I(title="CONTAX 康泰时 G1 绿标95新机身", price=2999), watch) is True

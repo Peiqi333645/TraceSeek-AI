@@ -6,7 +6,7 @@ import pytest
 
 from xianyu_crawler.config import Watch
 from xianyu_crawler.search import (
-    parse_search_json, normalize_search_query, _native_condition, build_search_payload, search,
+    parse_search_json, normalize_search_query, _native_condition, build_search_payload,
 )
 
 
@@ -88,7 +88,7 @@ def test_region_payload_keeps_province_city_and_district_levels_separate():
     assert extra["extraDivision"] == "上城区"
 
 
-def test_native_search_reported_eleven_returns_eleven_unique_items():
+def test_native_search_reported_eleven_parses_eleven_unique_items():
     cards = [{"data": {"item": {"main": {
         "targetUrl": f"fleamarket://item?id={1000 + n}",
         "exContent": {"title": f"康泰时 G1 杭州样本 {n + 1}",
@@ -98,32 +98,6 @@ def test_native_search_reported_eleven_returns_eleven_unique_items():
     raw = {"ret": ["SUCCESS::调用成功"], "data": {
         "resultInfo": {"totalCount": 11, "hasNextPage": False}, "resultList": cards}}
 
-    class Response:
-        status = 200
-        def json(self):
-            return raw
-
-    class Request:
-        def post(self, *args, **kwargs):
-            return Response()
-
-    class Page:
-        def goto(self, *args, **kwargs):
-            return None
-        def wait_for_timeout(self, *args):
-            return None
-        def close(self):
-            return None
-
-    class Context:
-        request = Request()
-        def new_page(self):
-            return Page()
-        def cookies(self, *args):
-            return [{"name": "_m_h5_tk", "value": "token_123"}]
-
-    watch = Watch(name="康泰时 G1", keywords=["康泰时 G1"],
-                  price_min=2000, price_max=4000, city="杭州")
-    items = search(Context(), watch, max_pages=5)
+    items = parse_search_json(raw)
     assert len(items) == 11
     assert len({item.item_id for item in items}) == 11

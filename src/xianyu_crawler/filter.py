@@ -10,8 +10,11 @@ from .config import Watch
 _NON_PRODUCT_TERMS = (
     "求购", "收购", "回收", "租赁", "出租", "维修", "代购", "定金", "咨询", "聊天", "话点", "我想要",
     "包装盒", "空盒", "保护壳", "贴膜", "配件", "镜头", "转接环", "后背",
-    "闪光灯", "取景器", "皮套", "说明书",
+    "闪光灯", "取景器", "皮套", "说明书", "前盖", "后盖", "滤镜", "附件",
+    "适用", "可用", "兼容", "联名", "KITH", "服装", "短袖", "卫衣", "帽子",
 )
+
+_ACCESSORY_SPEC = re.compile(r"(?:^|[^a-z0-9])(?:g|f)?\d{2,3}(?:\.\d+)?\s*(?:mm|/\d(?:\.\d+)?)", re.I)
 
 
 def _norm(text: str) -> str:
@@ -44,7 +47,11 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
         if tokens and not all(token in haystack for token in tokens):
             return False
     query = "".join(wanted)
-    if any(term in title and term not in query for term in _NON_PRODUCT_TERMS):
+    if any(_norm(term) in haystack and _norm(term) not in query for term in _NON_PRODUCT_TERMS):
+        return False
+    # 镜头标题常只写“G45/2”“90/2.8”，没有“镜头”二字；这类兼容性文字
+    # 不能因为后面出现“G1/G2可用”就被当成 G1 相机机身。
+    if _ACCESSORY_SPEC.search(title) and not _ACCESSORY_SPEC.search(query):
         return False
     return True
 

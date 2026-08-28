@@ -257,6 +257,9 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
         return True
     previous = list(captured)
     previous_ids = list(captured_ids)
+    # 必须在操作前清空；旧版操作后清空，网络快时会把刚返回的新结果删掉。
+    captured.clear()
+    captured_ids.clear()
     changed = page.evaluate(r"""values => {
       const visible = el => {
         const r = el.getBoundingClientRect(), s = getComputedStyle(el);
@@ -280,9 +283,9 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
       return true;
     }""", {"min": watch.price_min, "max": watch.price_max})
     if not changed:
+        captured[:] = previous
+        captured_ids[:] = previous_ids
         return False
-    captured.clear()
-    captured_ids.clear()
     if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=15)
             or (_click_filter_apply(page)
                 and _wait_for_new_page(page, captured, 0, cancelled))):
@@ -302,13 +305,13 @@ def _apply_native_conditions(page, watch: Watch, captured: list[dict],
     if not _click_exact_text(page, "筛选"):
         return False
     page.wait_for_timeout(250)
+    captured.clear()
+    captured_ids.clear()
     clicked = False
     for label in watch.condition:
         clicked = _click_exact_text(page, label) or clicked
     if not clicked:
         return False
-    captured.clear()
-    captured_ids.clear()
     applied = _click_filter_apply(page)
     if applied and _wait_for_new_page(page, captured, 0, cancelled):
         return True
@@ -323,19 +326,25 @@ def _apply_native_location(page, watch: Watch, captured: list[dict],
 
     只有最终地区选择产生了新的搜索结果才返回成功；避免设置杭州却继续展示全国结果。
     """
-    city = (watch.city or "").strip()
-    district = (watch.district or "").strip()
-    if not city and not district:
+    province, city, district = normalize_region(watch.province, watch.city, watch.district)
+    if not province and not city and not district:
         return True
     if not _click_exact_text(page, "区域"):
         return False
     page.wait_for_timeout(250)
     captured.clear()
     captured_ids.clear()
+    if province and not _click_location_text(page, province):
+        return False
+    if province:
+        page.wait_for_timeout(150)
+        # 省份点击可能产生一次中间请求，不能把“浙江全省”当成“杭州”。
+        captured.clear()
+        captured_ids.clear()
     target = city or district
     if not _click_location_text(page, target):
         return False
-    city_applied = _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=8)
+    city_applied = _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50)
     if district:
         # 城市选择后面板可能保持打开，也可能收起；两种页面都兼容。
         captured.clear()
@@ -346,7 +355,7 @@ def _apply_native_location(page, watch: Watch, captured: list[dict],
             page.wait_for_timeout(200)
             if not _click_location_text(page, district):
                 return False
-        if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=8)
+        if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50)
                 or (_click_filter_apply(page)
                     and _wait_for_new_page(page, captured, 0, cancelled))):
             return True
@@ -456,32 +465,62 @@ def _items_from_dom(page) -> list[Item]:
 
 def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
            start_page: int = 1, progress=None, cancelled=None) -> list[Item]:
-    """用闲鱼 PC 原生搜索请求读取连续页面。
+    """操作闲鱼 PC 原生筛选控件，并读取网页自身发出的搜索响应。
 
-    页面只用于建立与用户网页相同的登录态和 mtop token；关键词、价格、地区、
-    页码全部写入官方搜索请求体，因此不会再出现 DOM 点错地区或重复第一页。
+    不再猜测私有地区参数。若价格或地区控件没有真正触发新结果，本轮明确失败，
+    绝不把全国结果伪装成杭州结果。
     """
     page = ctx.new_page()
     out: list[Item] = []
     seen: set[str] = set()
+    captured: list[dict] = []
+    captured_ids: list[frozenset[str]] = []
+
+    def capture(response) -> None:
+        if SEARCH_API not in response.url:
+            return
+        try:
+            raw = response.json()
+            items = parse_search_json(raw)
+            captured.append(raw)
+            captured_ids.append(frozenset(item.item_id for item in items))
+        except Exception:
+            return
+
+    page.on("response", capture)
     try:
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         query = normalize_search_query(query)
         page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
-        # 等待网页生成与当前账号一致的 mtop token。
-        for _ in range(100):
-            if _cookie_value(ctx, "_m_h5_tk"):
-                break
-            if cancelled and cancelled():
-                return []
-            page.wait_for_timeout(100)
+        if not _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=150):
+            raise RuntimeError("闲鱼网页没有返回搜索结果，请检查登录状态或稍后重试")
+        if not _apply_native_price(page, watch, captured, captured_ids, cancelled):
+            raise RuntimeError("闲鱼价格筛选没有生效，本轮已停止，未展示未筛选商品")
+        if not _apply_native_location(page, watch, captured, captured_ids, cancelled):
+            province, city, district = normalize_region(watch.province, watch.city, watch.district)
+            address = " ".join(x for x in (province, city, district) if x)
+            raise RuntimeError(f"闲鱼地区筛选“{address}”没有生效，本轮已停止，未展示全国商品")
+        if not _apply_native_conditions(page, watch, captured, captured_ids, cancelled):
+            raise RuntimeError("闲鱼成色筛选没有生效，本轮已停止，未展示未筛选商品")
         start_page = max(1, int(start_page))
         max_pages = max(1, int(max_pages))
-        end_page = start_page + max_pages - 1
-        for done, page_no in enumerate(range(start_page, end_page + 1), start=1):
+        # 深度轮换也真实点击下一页，确保平台筛选状态不会因手拼 pageNumber 丢失。
+        current_page = 1
+        while current_page < start_page:
+            previous_ids = captured_ids[-1] if captured_ids else frozenset()
+            captured.clear(); captured_ids.clear()
+            if not _click_next_page(page) or not _wait_for_new_page(page, captured, 0, cancelled):
+                return out
+            if captured_ids and captured_ids[-1] == previous_ids:
+                raise RuntimeError("闲鱼翻页后仍返回上一页，本轮已停止，避免重复商品")
+            current_page += 1
+        for done in range(1, max_pages + 1):
             if cancelled and cancelled():
                 break
-            raw = _native_search_request(ctx, build_search_payload(query, watch, page_no))
+            page_no = current_page
+            if not captured:
+                raise RuntimeError(f"闲鱼第 {page_no} 页没有返回可解析数据")
+            raw = captured[-1]
             page_items = parse_search_json(raw)
             reported_total = _reported_total(raw)
             # 对于不足一页的搜索（如用户实测杭州 11 件），解析数必须与闲鱼报告
@@ -502,8 +541,15 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                 out.append(item)
             if progress:
                 progress(done, max_pages)
-            if _has_next_page(raw) is False:
+            if done >= max_pages or _has_next_page(raw) is False:
                 break
+            previous_ids = frozenset(item.item_id for item in page_items)
+            captured.clear(); captured_ids.clear()
+            if not _click_next_page(page) or not _wait_for_new_page(page, captured, 0, cancelled):
+                break
+            if captured_ids and captured_ids[-1] == previous_ids:
+                raise RuntimeError("闲鱼翻页后仍返回上一页，本轮已停止，避免重复商品")
+            current_page += 1
     finally:
         page.close()
     return out
