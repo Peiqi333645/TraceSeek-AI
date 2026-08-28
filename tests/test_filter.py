@@ -80,8 +80,8 @@ def test_non_product_post_is_rejected():
     assert matches(I(title="回收 MacBook 高价咨询"), watch) is False
 
 
-def test_native_search_result_is_not_removed_by_second_keyword_guess():
+def test_native_search_still_requires_exact_model_relevance():
     watch = W(keywords=["康泰时 G1"], price_min=2000, price_max=4000, city="杭州")
     item = I(title="CONTAX 旁轴绿标机身", price=2999, location="浙江",
              raw={"_xianyu_native_search": True})
-    assert matches(item, watch) is True
+    assert matches(item, watch) is False

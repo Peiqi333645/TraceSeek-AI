@@ -9,7 +9,8 @@ from .config import Watch
 
 _NON_PRODUCT_TERMS = (
     "求购", "收购", "回收", "租赁", "出租", "维修", "代购", "定金", "咨询", "聊天", "话点", "我想要",
-    "包装盒", "空盒", "保护壳", "贴膜", "配件",
+    "包装盒", "空盒", "保护壳", "贴膜", "配件", "镜头", "转接环", "后背",
+    "闪光灯", "取景器", "皮套", "说明书",
 )
 
 
@@ -49,10 +50,9 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
 
 
 def matches(item: Item, watch: Watch) -> bool:
-    native = bool((item.raw or {}).get("_xianyu_native_search"))
-    # 原生搜索返回的集合就是闲鱼网页对该关键词的判定结果。再次要求标题逐字
-    # 包含关键词会删掉平台纠错/别名/语义命中的商品，造成软件数量少于网页。
-    if not native and not keyword_matches(item.title, watch.keywords):
+    # 原生接口也会返回扩展推荐；仍须要求品牌/型号全部命中。否则搜索
+    # “康泰时 G1”会混入 U4R、G2、镜头和其他配件。
+    if not keyword_matches(item.title, watch.keywords):
         return False
     if watch.price_min is not None and item.price < watch.price_min:
         return False
@@ -60,6 +60,12 @@ def matches(item: Item, watch: Watch) -> bool:
         return False
     # 城市/区县由搜索页原生“区域”控件筛选。卡片经常只返回省份（如浙江），
     # 不能再拿这个残缺字段做二次判断，否则杭州结果会被误删。
+    # 区县卡片字段存在时做确定性校验；字段缺失/只返回省份时不误删。
+    if (watch.district and item.location
+            and any(suffix in item.location for suffix in ("区", "县"))
+            and watch.district not in item.location
+            and item.location not in {watch.province, watch.city}):
+        return False
     # 成色为 best-effort 提取(可能 None); 未知不过滤, 只在"已知且不符"时排除
     if (watch.condition and item.condition is not None
             and _norm_condition(item.condition) not in {_norm_condition(x) for x in watch.condition}):

@@ -11,11 +11,13 @@ def client(tmp_path):
 
 def test_watch_crud_api(client):
     r = client.post("/api/watches", json={"name": "w1", "keywords": ["iPhone"],
-                                          "price_max": 5000, "city": "杭州", "district": "上城区"})
+                                          "price_max": 5000, "province": "浙江",
+                                          "city": "杭州", "district": "上城区"})
     assert r.status_code == 200
     wid = r.json()["id"]
     assert client.get("/api/watches").json()[0]["name"] == "w1"
     assert client.get("/api/watches").json()[0]["district"] == "上城区"
+    assert client.get("/api/watches").json()[0]["province"] == "浙江"
     r2 = client.put(f"/api/watches/{wid}",
                     json={"name": "w1", "keywords": ["iPhone", "苹果"], "price_max": 4000, "enabled": False})
     assert r2.json()["price_max"] == 4000 and r2.json()["enabled"] is False

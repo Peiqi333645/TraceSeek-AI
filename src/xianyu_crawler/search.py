@@ -16,6 +16,7 @@ from urllib.parse import quote
 from .config import Watch
 from .models import Item
 from .parsing import to_price, guess_condition, to_dt_ms, items_from_json
+from .regions import normalize_region
 SEARCH_URL = "https://www.goofish.com/search"
 SEARCH_API = "mtop.taobao.idlemtopsearch.pc.search"
 MTOP_URL = f"https://h5api.m.goofish.com/h5/{SEARCH_API}/1.0/"
@@ -42,13 +43,16 @@ def build_search_payload(query: str, watch: Watch, page_number: int) -> dict:
         low = 0 if watch.price_min is None else watch.price_min
         high = 99999999 if watch.price_max is None else watch.price_max
         search_filters.append(f"priceRange:{low:g},{high:g}")
-    place = (watch.district or watch.city or "").strip()
+    province, city, district = normalize_region(watch.province, watch.city, watch.district)
+    place = province or city or district
     extra = "{}"
     if place:
         extra = json.dumps({
-            "divisionList": [{"province": "", "city": place}],
+            # 与闲鱼三级地区面板一致：省和城市必须放在各自字段。旧版把区县
+            # 填进 city 且 province 为空，平台会忽略地区或返回全国结果。
+            "divisionList": [{"province": province, "city": city}],
             "excludeMultiPlacesSellers": "0",
-            "extraDivision": "",
+            "extraDivision": district,
         }, ensure_ascii=False, separators=(",", ":"))
     return {
         "pageNumber": int(page_number),
@@ -492,8 +496,8 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                 if item.item_id in seen:
                     continue
                 seen.add(item.item_id)
-                # 告诉规则层：关键词、价格、地区已经由闲鱼原生搜索执行，禁止再
-                # 用标题/残缺地址二次删减，否则无法与网页结果集合保持一致。
+                # 标记来源供诊断使用；规则层仍会剔除闲鱼“扩展推荐”里的错型号
+                # 和配件，但不再用缺失的城市字段误删候选。
                 item.raw = {**(item.raw or {}), "_xianyu_native_search": True}
                 out.append(item)
             if progress:

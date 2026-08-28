@@ -20,6 +20,7 @@ class WatchIn(BaseModel):
     keywords: list[str] = []
     price_min: float | None = None
     price_max: float | None = None
+    province: str | None = None
     city: str | None = None
     district: str | None = None
     condition: list[str] | None = None
@@ -163,6 +164,7 @@ def watchin_to_fields(b: WatchIn) -> dict:
         "keywords": json.dumps(b.keywords, ensure_ascii=False),
         "price_min": b.price_min,
         "price_max": b.price_max,
+        "province": b.province,
         "city": b.city,
         "district": b.district,
         "condition": json.dumps(b.condition, ensure_ascii=False) if b.condition is not None else None,
@@ -180,6 +182,7 @@ def watchrow_to_out(w: WatchRow) -> WatchOut:
         keywords=json.loads(w.keywords or "[]"),
         price_min=w.price_min,
         price_max=w.price_max,
+        province=w.province,
         city=w.city,
         district=w.district,
         condition=json.loads(w.condition) if w.condition else None,

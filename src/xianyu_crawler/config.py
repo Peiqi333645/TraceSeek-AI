@@ -27,6 +27,7 @@ class Watch(BaseModel):
     keywords: list[str]
     price_min: float | None = None
     price_max: float | None = None
+    province: str | None = None
     city: str | None = None
     district: str | None = None
     condition: list[str] | None = None

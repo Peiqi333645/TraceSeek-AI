@@ -45,6 +45,7 @@ def watchrow_to_watch(w: WatchRow) -> Watch:
         keywords=json.loads(w.keywords or "[]"),
         price_min=w.price_min,
         price_max=w.price_max,
+        province=w.province,
         city=w.city,
         district=w.district,
         condition=json.loads(w.condition) if w.condition else None,

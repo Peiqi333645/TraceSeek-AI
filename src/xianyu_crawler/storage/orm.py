@@ -77,6 +77,7 @@ class WatchRow(Base):
     keywords: Mapped[str] = mapped_column(Text, default="[]")              # JSON list
     price_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    province: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     district: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     condition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list

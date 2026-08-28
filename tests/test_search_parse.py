@@ -76,8 +76,16 @@ def test_native_payload_matches_goofish_price_and_hangzhou_filters():
     assert payload["rowsPerPage"] == 30
     assert payload["propValueStr"]["searchFilter"] == "priceRange:2000,4000;"
     extra = json.loads(payload["extraFilterValue"])
-    assert extra["divisionList"] == [{"province": "", "city": "杭州"}]
+    assert extra["divisionList"] == [{"province": "浙江", "city": "杭州"}]
     assert payload["sortField"] == payload["sortValue"] == ""
+
+
+def test_region_payload_keeps_province_city_and_district_levels_separate():
+    watch = Watch(name="w", keywords=["康泰时 G1"], province="浙江",
+                  city="杭州市", district="上城区")
+    extra = json.loads(build_search_payload("康泰时 G1", watch, 1)["extraFilterValue"])
+    assert extra["divisionList"] == [{"province": "浙江", "city": "杭州"}]
+    assert extra["extraDivision"] == "上城区"
 
 
 def test_native_search_reported_eleven_returns_eleven_unique_items():
