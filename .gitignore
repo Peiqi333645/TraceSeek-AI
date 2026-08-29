@@ -1,4 +1,6 @@
-data/
+# 只忽略程序运行时在仓库根目录生成的用户数据。
+# 不要写成 data/，否则 frontend/src/data/ 的内置全国区划也会被忽略。
+/data/
 *.pyc
 __pycache__/
 .env
