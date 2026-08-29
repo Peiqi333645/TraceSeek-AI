@@ -26,8 +26,28 @@ def test_scan_keeps_all_98_native_goofish_results(monkeypatch):
     monkeypatch.setattr(service, "_search", lambda ctx, w, st: items)
     w = Watch(name="康泰时", keywords=["康泰时g1"], price_min=2000,
               price_max=4000, province="浙江", city="杭州")
-    assert service.scan_recommendations(None, s, Settings(), [w]) == 98
+    # 本轮“新推荐”只数精准匹配，但闲鱼原生 98 条必须全部保存。
+    assert service.scan_recommendations(None, s, Settings(), [w]) == 0
     assert len(repo.list_recommendations(s)) == 98
+
+
+def test_native_candidates_are_kept_but_unrelated_items_fail_precision(monkeypatch):
+    s = make_session("sqlite:///:memory:", create=True)
+    items = [
+        Item(item_id="camera", title="CONTAX 康泰时 G1 绿标机身", url="u1",
+             price=3000, raw={"_xianyu_native_search": True}),
+        Item(item_id="lens", title="康泰时 21mm F2.8 镜头 R306", url="u2",
+             price=3415, raw={"_xianyu_native_search": True}),
+        Item(item_id="adapter", title="兼容 CONTAX 康泰时 4x5 数码后背适配器", url="u3",
+             price=2932, raw={"_xianyu_native_search": True}),
+    ]
+    monkeypatch.setattr(service, "_search", lambda ctx, w, st: items)
+    w = Watch(name="康泰时", keywords=["康泰时g1"], price_min=2000, price_max=4000)
+    assert service.scan_recommendations(None, s, Settings(), [w]) == 1
+    rows = {row.item_id: row for row in repo.list_recommendations(s)}
+    assert set(rows) == {"camera", "lens", "adapter"}
+    assert rows["camera"].rec_ok is True
+    assert rows["lens"].rec_ok is False and rows["adapter"].rec_ok is False
 
 
 def test_scan_recommendations_llm_review(monkeypatch):

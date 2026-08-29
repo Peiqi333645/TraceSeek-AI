@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings, Watch
 from .models import Item
-from .filter import matches
+from .filter import matches, keyword_matches
 from .storage import repo
 from .storage.orm import WatchRow, AppConfig, ItemRow
 from . import search as _search_mod
@@ -142,6 +142,10 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
                 # 条件改名/删除后立即运行时，把仍命中的待审商品同步到当前条件，
                 # 同时更新价格、标题和地址；不能因“历史见过”继续残留在旧分类。
                 repo.upsert_item_with_price(session, item, source="search", watch_name=w.name)
+                precise = keyword_matches(item.title, w.keywords)
+                repo.update_rec_verdict(
+                    session, item.item_id, precise,
+                    None if precise else "关键词或型号不完整匹配")
                 seen.add(item.item_id)
                 continue
             # 跳过已推荐过的、已在闲鱼收藏的、已知死链的、近期不看的
@@ -155,6 +159,12 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
         # LLM 二次审核(有 requirement 才审; 无要求/失败放行)。
         # 未通过的也入库(带 rec_ok=False + 理由), 由前端筛选展示; 返回值只数"通过"的(头条数字)。
         verdicts = review.review_items(fresh, w.requirement, settings)
+        # 闲鱼原生候选完整入库用于数量对账，但默认“精准匹配”必须先通过
+        # 确定性关键词/型号判断。AI 是第二层，不能代替基础相关性。
+        for index, item in enumerate(fresh):
+            if not keyword_matches(item.title, w.keywords):
+                verdicts[index] = review.ReviewVerdict(
+                    ok=False, reason="关键词或型号不完整匹配")
         for item, verdict in zip(fresh, verdicts):
             new = repo.create_recommendation(
                 session, item, w.name, verdict.reason or None, ok=verdict.ok)

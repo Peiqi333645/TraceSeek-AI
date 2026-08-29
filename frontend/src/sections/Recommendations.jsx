@@ -10,9 +10,8 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
   const [watches, setWatches] = useState([])
   const [busy, setBusy] = useState({})
   const [muteOpen, setMuteOpen] = useState(null)
-  // 默认展示闲鱼原生搜索得到的全部候选；AI 精选只能由用户主动切换，
-  // 不能让“闲鱼返回 11 件”在推荐页看起来只剩寥寥几件。
-  const [onlyPassed, setOnlyPassed] = useState(false)
+  // 默认展示确定性关键词/型号匹配结果；原生候选仍完整保留供数量对账。
+  const [onlyPassed, setOnlyPassed] = useState(true)
   const [sort, setSort] = useState('newest')
   const [activeWatch, setActiveWatch] = useState(null)
 
@@ -20,7 +19,6 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
     setItems(xs)
     setCfg(c)
     setWatches(ws)
-    if (!c.review_enabled) setOnlyPassed(false)
   })
   useEffect(() => {
     load()
@@ -30,8 +28,7 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
     const next = { ...cfg, review_enabled: enabled, smtp_pass: null, review_api_token: null }
     const saved = await api.saveConfig(next)
     setCfg(saved)
-    if (!enabled) setOnlyPassed(false)
-    onToast?.(enabled ? '已开启AI智能筛选' : '已关闭AI筛选，将显示所有候选商品')
+    onToast?.(enabled ? '已开启AI智能筛选' : '已关闭AI筛选，仍保留基础精准匹配')
   }
 
   const act = async (id, fn) => {
@@ -77,7 +74,7 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
         )}
         {it.reason && (
           <div className={`rec-reason${failed ? ' rejected' : ''}`}>
-            <span className="rec-reason-tag">{failed ? '未通过' : 'AI'}</span>
+            <span className="rec-reason-tag">{failed ? '不匹配' : 'AI'}</span>
             <span>{it.reason}</span>
           </div>
         )}
@@ -158,15 +155,15 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
           <i className="ti ti-trending-down" /> 今日降价 <b>{dropsToday}</b>
         </Link>
       </h1>
-      <p className="page-sub">自动发现符合条件的新商品。AI精选只显示智能判断更符合要求的结果。</p>
+      <p className="page-sub">精准匹配要求品牌与独立型号同时命中；闲鱼原生保留平台返回的完整候选。</p>
       {currentItems.length > 0 && (
         <div className="rec-toolbar">
           <div className="rec-filter">
-            <button disabled={!cfg.review_enabled} className={`seg${onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(true)}>
-              AI精选 <b>{passedCount}</b>
+            <button className={`seg${onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(true)}>
+              精准匹配 <b>{passedCount}</b>
             </button>
             <button className={`seg${!onlyPassed ? ' on' : ''}`} onClick={() => setOnlyPassed(false)}>
-              所有候选 <b>{currentItems.length}</b>
+              闲鱼原生 <b>{currentItems.length}</b>
             </button>
           </div>
           <div className="rec-tools">
@@ -180,10 +177,10 @@ export default function Recommendations({ refreshKey, onToast, dropsToday = 0 })
       )}
       {shown.length === 0 ? (
         <EmptyState
-          title={onlyPassed && currentItems.length > 0 ? '暂无AI精选商品' : '暂无新推荐'}
+          title={onlyPassed && currentItems.length > 0 ? '暂无精准匹配商品' : '暂无新推荐'}
           sub={
             onlyPassed && currentItems.length > 0
-              ? `还有 ${currentItems.length} 条候选商品，可点击「所有候选」查看`
+              ? `闲鱼原生返回 ${currentItems.length} 条候选，可切换查看；这些商品未同时命中品牌和独立型号`
               : '定时任务会按你的条件自动发现新商品'
           }
         />
