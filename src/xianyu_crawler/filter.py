@@ -67,18 +67,19 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
 
 
 def matches(item: Item, watch: Watch) -> bool:
-    # 原生接口也会返回扩展推荐；仍须要求品牌/型号全部命中。否则搜索
-    # “康泰时 G1”会混入 U4R、G2、镜头和其他配件。
-    if not keyword_matches(item.title, watch.keywords):
-        return False
-    if watch.price_min is not None and item.price < watch.price_min:
-        return False
-    if watch.price_max is not None and item.price > watch.price_max:
-        return False
-    # 原生地区筛选必须生效；若卡片给出了可判定的省/市/区而明确属于
-    # 其他城市，则拒绝入库。字段缺失时保留，避免误删平台未返回地址的商品。
-    if not location_matches(item.location, watch.province, watch.city, watch.district):
-        return False
+    native = bool(item.raw and item.raw.get("_xianyu_native_search"))
+    if not native:
+        # 只对旧数据、收藏数据和非原生兜底结果做本地相关性校验。
+        # 闲鱼原生搜索结果必须原样进入“所有候选”，否则平台返回 98 件
+        # 仍会被软件二次过滤成 0--2 件，无法与网页对账。
+        if not keyword_matches(item.title, watch.keywords):
+            return False
+        if watch.price_min is not None and item.price < watch.price_min:
+            return False
+        if watch.price_max is not None and item.price > watch.price_max:
+            return False
+        if not location_matches(item.location, watch.province, watch.city, watch.district):
+            return False
     # 成色为 best-effort 提取(可能 None); 未知不过滤, 只在"已知且不符"时排除
     if (watch.condition and item.condition is not None
             and _norm_condition(item.condition) not in {_norm_condition(x) for x in watch.condition}):

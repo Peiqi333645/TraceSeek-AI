@@ -18,6 +18,18 @@ def test_scan_recommendations_filters_and_dedups(monkeypatch):
     assert service.scan_recommendations(None, s, Settings(), [w]) == 0
 
 
+def test_scan_keeps_all_98_native_goofish_results(monkeypatch):
+    s = make_session("sqlite:///:memory:", create=True)
+    items = [Item(item_id=str(i), title=f"闲鱼原生结果 {i}", url=f"u{i}",
+                  price=2500, raw={"_xianyu_native_search": True})
+             for i in range(98)]
+    monkeypatch.setattr(service, "_search", lambda ctx, w, st: items)
+    w = Watch(name="康泰时", keywords=["康泰时g1"], price_min=2000,
+              price_max=4000, province="浙江", city="杭州")
+    assert service.scan_recommendations(None, s, Settings(), [w]) == 98
+    assert len(repo.list_recommendations(s)) == 98
+
+
 def test_scan_recommendations_llm_review(monkeypatch):
     from xianyu_crawler import review
     s = make_session("sqlite:///:memory:", create=True)

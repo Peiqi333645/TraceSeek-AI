@@ -86,11 +86,19 @@ def test_non_product_post_is_rejected():
     assert matches(I(title="回收 MacBook 高价咨询"), watch) is False
 
 
-def test_native_search_still_requires_exact_model_relevance():
+def test_native_search_results_are_not_removed_by_a_second_keyword_filter():
     watch = W(keywords=["康泰时 G1"], price_min=2000, price_max=4000, city="杭州")
     item = I(title="CONTAX 旁轴绿标机身", price=2999, location="浙江",
              raw={"_xianyu_native_search": True})
-    assert matches(item, watch) is False
+    assert matches(item, watch) is True
+
+
+def test_native_search_count_is_not_reduced_by_incomplete_card_fields():
+    watch = W(keywords=["康泰时 G1"], price_min=2000, price_max=4000,
+              province="浙江", city="杭州")
+    items = [I(item_id=str(n), title=f"闲鱼原生卡片 {n}", price=2500,
+               location=None, raw={"_xianyu_native_search": True}) for n in range(98)]
+    assert sum(matches(item, watch) for item in items) == 98
 
 
 def test_camera_model_rejects_compatible_lens_and_brand_merchandise():
