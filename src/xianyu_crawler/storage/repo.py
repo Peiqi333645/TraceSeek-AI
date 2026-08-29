@@ -47,6 +47,12 @@ def upsert_item_with_price(s: Session, item: Item, source: str,
         if prev is not None and item.price != prev:   # 价格变了 → 记调价时间
             row.price_changed_at = _now()
         row.latest_price = item.price
+        row.title = item.title
+        row.url = item.url
+        row.seller_id = item.seller_id or row.seller_id
+        row.seller_nick = item.seller_nick or row.seller_nick
+        if source == "search" and watch_name is not None:
+            row.watch_name = watch_name
         row.reduce_price = reduce
         row.location = item.location
         row.condition = item.condition

@@ -108,3 +108,11 @@ def test_camera_model_rejects_compatible_lens_and_brand_merchandise():
     assert matches(I(title="CONTAX 康泰时 G1 绿标95新机身", price=2999,
                      location="上城区"), watch) is True
     assert matches(I(title="康泰时 黑魔 CY 70-210 3.5 AEG 1比2微距", price=2200), watch) is False
+
+
+def test_model_only_camera_body_titles_match_but_accessories_do_not():
+    watch = W(keywords=["康泰时g1"])
+    assert matches(I(title="G1绿标 旁轴胶片相机 机身功能正常"), watch) is True
+    assert matches(I(title="Ｇ１白标机身 成色很好"), watch) is True
+    assert matches(I(title="G1可用 21mm F2.8 镜头"), watch) is False
+    assert matches(I(title="G1 转接数码后背适配器"), watch) is False

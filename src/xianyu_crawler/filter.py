@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from .models import Item
 from .config import Watch
@@ -16,9 +17,14 @@ _NON_PRODUCT_TERMS = (
 )
 
 _ACCESSORY_SPEC = re.compile(r"(?:^|[^a-z0-9])(?:g|f)?\d{2,3}(?:\.\d+)?\s*(?:mm|/\d(?:\.\d+)?)", re.I)
+_CAMERA_BODY_TERMS = (
+    "机身", "相机", "套机", "旁轴", "胶片机", "绿标", "白标", "功能正常",
+    "成色", "快门", "取景窗", "测光", "对焦",
+)
 
 
 def _norm(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
     value = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", text.lower())
     # 闲鱼网页会把常见错序品牌词自动纠正，但直接请求搜索接口不会。
     # 匹配阶段也统一成平台常用写法，避免“康时泰 G1”无法命中“康泰时 G1”。
@@ -40,9 +46,12 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
     if not wanted:
         return True
     haystack = _norm(title)
-    raw_haystack = title.lower().replace("contax", "康泰时").replace("康时泰", "康泰时")
+    raw_haystack = unicodedata.normalize("NFKC", title).lower()
+    raw_haystack = raw_haystack.replace("contax", "康泰时").replace("康时泰", "康泰时")
     # 搜索词中的品牌、型号、规格必须全部命中。旧逻辑用了 any，导致
     # “康泰时 G1”只要出现“康泰时”就放行 T1/G2/镜头等不对应商品。
+    missing_brand_only = False
+    model_hit = False
     for raw in keywords:
         tokens = [_norm(x) for x in re.findall(r"[a-zA-Z0-9]+|[\u4e00-\u9fff]+", raw)
                   if len(_norm(x)) >= 2]
@@ -54,14 +63,27 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
                 pattern = r"(?<![a-z0-9])" + r"[\s._/+\-]*".join(map(re.escape, parts)) + r"(?![a-z0-9])"
                 return re.search(pattern, raw_haystack, re.I) is not None
             return token in haystack
-        if tokens and not all(contains(token) for token in tokens):
-            return False
+        hits = {token: contains(token) for token in tokens}
+        model_tokens = [token for token in tokens
+                        if re.fullmatch(r"[a-z]+\d+[a-z0-9]*", token, re.I)]
+        model_hit = model_hit or any(hits.get(token, False) for token in model_tokens)
+        missing = [token for token in tokens if not hits[token]]
+        if missing:
+            # 闲鱼标题经常只写“G1绿标/白标机身”，不重复写品牌。
+            chinese = [token for token in tokens if re.search(r"[\u4e00-\u9fff]", token)]
+            if (model_tokens and all(token in chinese for token in missing)
+                    and all(hits.get(token, False) for token in model_tokens)):
+                missing_brand_only = True
+            else:
+                return False
     query = "".join(wanted)
     if any(_norm(term) in haystack and _norm(term) not in query for term in _NON_PRODUCT_TERMS):
         return False
     # 镜头标题常只写“G45/2”“90/2.8”，没有“镜头”二字；这类兼容性文字
     # 不能因为后面出现“G1/G2可用”就被当成 G1 相机机身。
     if _ACCESSORY_SPEC.search(title) and not _ACCESSORY_SPEC.search(query):
+        return False
+    if missing_brand_only and (not model_hit or not any(term in title for term in _CAMERA_BODY_TERMS)):
         return False
     return True
 
