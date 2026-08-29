@@ -5,6 +5,7 @@ import re
 
 from .models import Item
 from .config import Watch
+from .regions import location_matches
 
 
 _NON_PRODUCT_TERMS = (
@@ -39,12 +40,21 @@ def keyword_matches(title: str, keywords: list[str]) -> bool:
     if not wanted:
         return True
     haystack = _norm(title)
+    raw_haystack = title.lower().replace("contax", "康泰时").replace("康时泰", "康泰时")
     # 搜索词中的品牌、型号、规格必须全部命中。旧逻辑用了 any，导致
     # “康泰时 G1”只要出现“康泰时”就放行 T1/G2/镜头等不对应商品。
     for raw in keywords:
         tokens = [_norm(x) for x in re.findall(r"[a-zA-Z0-9]+|[\u4e00-\u9fff]+", raw)
                   if len(_norm(x)) >= 2]
-        if tokens and not all(token in haystack for token in tokens):
+        def contains(token: str) -> bool:
+            # 型号必须是完整字母数字词。旧的纯 substring 会把 “AEG 1”
+            # 去空格后变成 aeg1，继而错误命中 g1。
+            if re.fullmatch(r"[a-z]+\d+[a-z0-9]*", token, re.I):
+                parts = re.findall(r"[a-z]+|\d+", token, re.I)
+                pattern = r"(?<![a-z0-9])" + r"[\s._/+\-]*".join(map(re.escape, parts)) + r"(?![a-z0-9])"
+                return re.search(pattern, raw_haystack, re.I) is not None
+            return token in haystack
+        if tokens and not all(contains(token) for token in tokens):
             return False
     query = "".join(wanted)
     if any(_norm(term) in haystack and _norm(term) not in query for term in _NON_PRODUCT_TERMS):
@@ -65,13 +75,9 @@ def matches(item: Item, watch: Watch) -> bool:
         return False
     if watch.price_max is not None and item.price > watch.price_max:
         return False
-    # 城市/区县由搜索页原生“区域”控件筛选。卡片经常只返回省份（如浙江），
-    # 不能再拿这个残缺字段做二次判断，否则杭州结果会被误删。
-    # 区县卡片字段存在时做确定性校验；字段缺失/只返回省份时不误删。
-    if (watch.district and item.location
-            and any(suffix in item.location for suffix in ("区", "县"))
-            and watch.district not in item.location
-            and item.location not in {watch.province, watch.city}):
+    # 原生地区筛选必须生效；若卡片给出了可判定的省/市/区而明确属于
+    # 其他城市，则拒绝入库。字段缺失时保留，避免误删平台未返回地址的商品。
+    if not location_matches(item.location, watch.province, watch.city, watch.district):
         return False
     # 成色为 best-effort 提取(可能 None); 未知不过滤, 只在"已知且不符"时排除
     if (watch.condition and item.condition is not None

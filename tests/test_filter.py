@@ -26,8 +26,14 @@ def test_price_above_max():
 
 def test_city_is_not_guessed_from_incomplete_card_location():
     assert matches(I(location="上海市浦东"), W(city="上海")) is True
-    # 地区由闲鱼原生区域控件执行；卡片地址只显示省份/城市时不再二次误删。
-    assert matches(I(location="北京市"), W(city="上海")) is True
+    assert matches(I(location="北京市"), W(city="上海")) is False
+
+
+def test_city_rejects_other_districts_but_accepts_own_districts():
+    watch = W(keywords=["康泰时 G1"], province="浙江", city="杭州")
+    assert matches(I(title="康泰时 G1", location="上城区"), watch) is True
+    assert matches(I(title="康泰时 G1", location="通州区"), watch) is False
+    assert matches(I(title="康泰时 G1", location="松江区"), watch) is False
 
 
 def test_missing_city_metadata_does_not_drop_item():
@@ -91,4 +97,6 @@ def test_camera_model_rejects_compatible_lens_and_brand_merchandise():
     watch = W(keywords=["康泰时 G1"], price_min=2000, price_max=4000, city="杭州")
     assert matches(I(title="康泰时+contax+g45/2 contax g1 g2可用", price=3580), watch) is False
     assert matches(I(title="KITH联名款 康泰时 CONTAX G2/G1 时尚定制", price=2500), watch) is False
-    assert matches(I(title="CONTAX 康泰时 G1 绿标95新机身", price=2999), watch) is True
+    assert matches(I(title="CONTAX 康泰时 G1 绿标95新机身", price=2999,
+                     location="上城区"), watch) is True
+    assert matches(I(title="康泰时 黑魔 CY 70-210 3.5 AEG 1比2微距", price=2200), watch) is False

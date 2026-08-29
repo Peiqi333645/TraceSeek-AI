@@ -137,6 +137,13 @@ def scan_recommendations(ctx, session: Session, settings: Settings,
         for item in found:
             if item.item_id in seen or not matches(item, w):
                 continue
+            existing = session.get(ItemRow, item.item_id)
+            if existing is not None and existing.rec_status == "new":
+                # 条件改名/删除后立即运行时，把仍命中的待审商品同步到当前条件，
+                # 同时更新价格、标题和地址；不能因“历史见过”继续残留在旧分类。
+                repo.upsert_item_with_price(session, item, source="search", watch_name=w.name)
+                seen.add(item.item_id)
+                continue
             # 跳过已推荐过的、已在闲鱼收藏的、已知死链的、近期不看的
             if (repo.has_been_recommended(session, item.item_id)
                     or repo.is_collected(session, item.item_id)

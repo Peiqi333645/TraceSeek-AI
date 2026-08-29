@@ -19,6 +19,13 @@ _HANGZHOU_DISTRICTS = {
     "钱塘区", "富阳区", "临安区", "桐庐县", "淳安县", "建德市",
 }
 
+try:
+    from .region_index import CITY_TO_PROVINCE as _ALL_CITY_TO_PROVINCE
+    from .region_index import DISTRICT_TO_REGIONS as _DISTRICT_TO_REGIONS
+except ImportError:  # 兼容旧安装包局部覆盖
+    _ALL_CITY_TO_PROVINCE = _CITY_TO_PROVINCE
+    _DISTRICT_TO_REGIONS = {}
+
 
 def normalize_region(province: str | None, city: str | None,
                      district: str | None) -> tuple[str, str, str]:
@@ -33,5 +40,43 @@ def normalize_region(province: str | None, city: str | None,
     if not c and d in _HANGZHOU_DISTRICTS:
         c = "杭州"
     if not p and c:
-        p = _CITY_TO_PROVINCE.get(c, "")
+        p = _ALL_CITY_TO_PROVINCE.get(c, _CITY_TO_PROVINCE.get(c, ""))
     return p, c, d
+
+
+def _strip(value: str | None) -> str:
+    text = (value or "").strip()
+    for suffix in ("特别行政区", "壮族自治区", "回族自治区", "维吾尔自治区",
+                   "自治区", "省", "市"):
+        if text.endswith(suffix):
+            return text.removesuffix(suffix)
+    return text
+
+
+def location_matches(location: str | None, province: str | None, city: str | None,
+                     district: str | None) -> bool:
+    """卡片地址明确冲突时返回 False；地址缺失或无法判定时不误删。"""
+    if not location:
+        return True
+    wanted_p, wanted_c, wanted_d = normalize_region(province, city, district)
+    if not any((wanted_p, wanted_c, wanted_d)):
+        return True
+    loc = _strip(location)
+    if wanted_d:
+        return loc == _strip(wanted_d) or wanted_d in location
+    if loc in _DISTRICT_TO_REGIONS:
+        actual_p, actual_c = _DISTRICT_TO_REGIONS[loc]
+        if wanted_c and actual_c != wanted_c:
+            return False
+        if wanted_p and actual_p != wanted_p:
+            return False
+        return True
+    if loc in _ALL_CITY_TO_PROVINCE:
+        if wanted_c and loc != wanted_c:
+            return False
+        return not wanted_p or _ALL_CITY_TO_PROVINCE[loc] == wanted_p
+    # 只返回省份时仍可确认省级冲突，但不能据此排除省内某个城市。
+    known_provinces = set(_ALL_CITY_TO_PROVINCE.values())
+    if loc in known_provinces:
+        return not wanted_p or loc == wanted_p
+    return True

@@ -51,10 +51,11 @@ def build_search_payload(query: str, watch: Watch, page_number: int) -> dict:
         if province or city:
             division_list.append({"province": province, "city": city})
         extra = json.dumps({
-            # 闲鱼 PC 搜索把省/市放在 divisionList，区县只使用顶层 area。
-            # 不发送平台不识别的自定义区县字段。
+            # 闲鱼 PC 搜索固定要求这三个字段同时存在。extraDivision 即使
+            # 没选区县也必须传空串；缺失时服务端会悄悄退回全国结果。
             "divisionList": division_list,
             "excludeMultiPlacesSellers": "0",
+            "extraDivision": district or "",
         }, ensure_ascii=False, separators=(",", ":"))
     return {
         "pageNumber": int(page_number),
@@ -68,16 +69,9 @@ def build_search_payload(query: str, watch: Watch, page_number: int) -> dict:
         "gps": "",
         "propValueStr": {"searchFilter": ";".join(search_filters) + (";" if search_filters else "")},
         "customGps": "",
-        "province": province,
-        "city": city,
-        "area": district,
-        "searchReqFromPage": "xyHome",
-        "searchTabType": "SEARCH_TAB_MAIN",
-        "forceUseInputKeyword": False,
-        "plateform": "pc",
-        "mainTab": True,
-        "supportFlexFilter": True,
-        "smartUIFilter": True,
+        # PC 搜索接口识别 pcSearch。xyHome 属于首页搜索来源，搭配地区条件
+        # 时会出现请求成功但 divisionList 未生效的情况。
+        "searchReqFromPage": "pcSearch",
         "extraFilterValue": extra,
         "userPositionJson": "{}",
     }
@@ -450,7 +444,9 @@ def parse_search_json(raw: dict) -> list[Item]:
         seen.add(str(iid))
         tag = str(args.get("tag") or "").lower()
         tagname = str(args.get("tagname") or "")
-        area = ex.get("area")
+        # p_city 是 PC 搜索卡片的标准城市字段；area 经常只是区县。
+        # 优先保留更完整的城市，缺失时才退回卡片 area。
+        area = args.get("p_city") or ex.get("area") or dp.get("area")
         nick = ex.get("userNickName") or dp.get("userNick")
         sid = args.get("seller_id")
         pic = ex.get("picUrl")
@@ -529,6 +525,7 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
     page = ctx.new_page()
     out: list[Item] = []
     seen: set[str] = set()
+    first_reported_total: int | None = None
     try:
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         query = normalize_search_query(query)
@@ -556,6 +553,8 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                 page, ctx, build_search_payload(query, watch, page_no))
             page_items = parse_search_json(raw)
             reported_total = _reported_total(raw)
+            if page_no == 1:
+                first_reported_total = reported_total
             # 对于不足一页的搜索（如用户实测杭州 11 件），解析数必须与闲鱼报告
             # 的总数完全相等；否则宁可明确报错，也不能静默交付“只显示几件”。
             if page_no == 1 and reported_total is not None and reported_total <= 30:
@@ -576,6 +575,14 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                 progress(done, max_pages)
             if done >= max_pages or _has_next_page(raw) is False:
                 break
+        # 页数足以覆盖闲鱼报告的全部结果时，必须逐件对账。此前只校验
+        # 不足 30 件的搜索，导致闲鱼显示 98 件而软件解析 2 件仍被当成成功。
+        if (start_page == 1 and first_reported_total is not None
+                and first_reported_total <= max_pages * 30
+                and len(seen) != first_reported_total):
+            raise RuntimeError(
+                f"闲鱼返回 {first_reported_total} 件，但软件只完整解析 {len(seen)} 件；"
+                "本轮已停止入库，请重新运行，避免展示残缺结果")
     finally:
         page.close()
     return out
