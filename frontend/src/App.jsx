@@ -89,6 +89,7 @@ export default function App() {
   const [events, setEvents] = useState(null)
   const [login, setLogin] = useState({ has_state: false, authenticated: false, status: 'idle' })
   const [toast, setToast] = useState(null)
+  const [lastRunError, setLastRunError] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [railOpen, setRailOpen] = useState(() => localStorage.getItem('xy-rail') !== '0')
   const [eventTab, setEventTab] = useState('all')
@@ -134,9 +135,13 @@ export default function App() {
       if (st.running) setRefreshKey((k) => k + 1)
       if (wasRunning.current && !st.running) {
         setRefreshKey((k) => k + 1)
-        if (st.last?.error) showToast(`抓取出错：${st.last.error}`)
-        else if (st.last)
+        if (st.last?.error) {
+          setLastRunError(st.last.error)
+          showToast(`抓取出错：${st.last.error}`)
+        } else if (st.last) {
+          setLastRunError(null)
           showToast(`本轮完成：新推荐 ${st.last.recommendations ?? 0} · 降价 ${st.last.drops ?? 0}`)
+        }
       }
       wasRunning.current = st.running
     } catch {
@@ -160,6 +165,7 @@ export default function App() {
       return
     }
     setRunMenu(false)
+    setLastRunError(null)
     wasRunning.current = true
     setStatus((current) => ({ ...(current || {}), running: true }))
     await api.run(watch)
@@ -288,7 +294,20 @@ export default function App() {
             {['expired', 'failed', 'busy'].includes(login.status) && <div className="login-error">{login.message}</div>}
             <small>退出账号后，本机数据会安全保留；再次登录即可恢复。</small>
           </div>
-        ) : <Routes>
+        ) : <>
+          {lastRunError && (
+            <div className="run-error-banner" role="alert">
+              <i className="ti ti-alert-triangle" />
+              <div>
+                <b>本轮搜索未完成</b>
+                <span>{lastRunError}</span>
+              </div>
+              <button type="button" aria-label="关闭提示" onClick={() => setLastRunError(null)}>
+                <i className="ti ti-x" />
+              </button>
+            </div>
+          )}
+          <Routes>
           <Route path="/" element={<Navigate to="/recommendations" replace />} />
           <Route
             path="/recommendations"
@@ -302,7 +321,8 @@ export default function App() {
           }} />} />
           <Route path="/settings" element={<Settings status={status} />} />
           <Route path="*" element={<Navigate to="/recommendations" replace />} />
-        </Routes>}
+          </Routes>
+        </>}
       </div>
 
       {/* 右栏 · 实时事件(可收起 + 按类型分 tab) */}

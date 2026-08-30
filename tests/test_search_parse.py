@@ -7,7 +7,7 @@ import pytest
 from xianyu_crawler.config import Watch
 from xianyu_crawler.search import (
     parse_search_json, normalize_search_query, _native_condition, build_search_payload,
-    _wait_for_new_page,
+    _wait_for_new_page, _payload_matches_watch,
 )
 
 
@@ -90,6 +90,18 @@ def test_native_payload_matches_goofish_price_and_hangzhou_filters():
     assert extra["extraDivision"] == ""
     assert payload["searchReqFromPage"] == "pcSearch"
     assert payload["sortField"] == payload["sortValue"] == ""
+
+
+def test_captured_page_request_must_contain_exact_keyword_price_and_region():
+    watch = Watch(name="康泰时", keywords=["康泰时g1"], price_min=2000,
+                  price_max=4000, province="浙江", city="杭州")
+    raw = {"_traceseek_request": build_search_payload("康泰时g1", watch, 1)}
+    assert _payload_matches_watch(raw, "康泰时g1", watch) is True
+    wrong_keyword = {"_traceseek_request": build_search_payload("康泰时", watch, 1)}
+    assert _payload_matches_watch(wrong_keyword, "康泰时g1", watch) is False
+    no_region = {"_traceseek_request": build_search_payload(
+        "康泰时g1", watch.model_copy(update={"province": None, "city": None}), 1)}
+    assert _payload_matches_watch(no_region, "康泰时g1", watch) is False
 
 
 def test_region_payload_keeps_province_city_and_district_levels_separate():

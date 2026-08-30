@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 
 from .config import Watch
 from .models import Item
@@ -174,6 +174,66 @@ def _reported_total(raw: dict) -> int | None:
             continue
         if number >= 0:
             return number
+    return None
+
+
+def _response_request_payload(response) -> dict | None:
+    """读取网页搜索请求中真正提交给 mtop 的 data。"""
+    try:
+        post_data = response.request.post_data or ""
+        form = parse_qs(post_data)
+        value = (form.get("data") or [None])[0]
+        if value:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else None
+        parsed = json.loads(post_data)
+        if isinstance(parsed, dict) and isinstance(parsed.get("data"), dict):
+            return parsed["data"]
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _payload_matches_watch(raw: dict, query: str, watch: Watch,
+                           require_price: bool = True,
+                           require_region: bool = True) -> bool:
+    """确认捕获的响应确实来自当前关键词及筛选条件，而不是延迟旧响应。"""
+    payload = raw.get("_traceseek_request")
+    if not isinstance(payload, dict):
+        return False
+
+    def norm(value: object) -> str:
+        return re.sub(r"\s+", "", str(value or "")).lower()
+
+    if norm(payload.get("keyword")) != norm(query):
+        return False
+    blob = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if require_price and (watch.price_min is not None or watch.price_max is not None):
+        if "price" not in blob.lower():
+            return False
+        for value in (watch.price_min, watch.price_max):
+            if value is not None and f"{value:g}" not in blob:
+                return False
+    if require_region:
+        province, city, district = normalize_region(
+            watch.province, watch.city, watch.district)
+        for value in (province, city, district):
+            if value and value not in blob:
+                return False
+    return True
+
+
+def _wait_for_matching_payload(page, captured: list[dict], query: str, watch: Watch,
+                               require_price: bool = True,
+                               require_region: bool = True,
+                               cancelled=None, timeout_steps: int = 60) -> dict | None:
+    for _ in range(timeout_steps):
+        if cancelled and cancelled():
+            return None
+        for raw in reversed(captured):
+            if _payload_matches_watch(raw, query, watch, require_price, require_region):
+                return raw
+        page.wait_for_timeout(100)
     return None
 
 
@@ -544,6 +604,9 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
             ret = raw.get("ret") or []
             if ret and not any(str(value).startswith("SUCCESS") for value in ret):
                 return
+            payload = _response_request_payload(response)
+            if payload is not None:
+                raw = {**raw, "_traceseek_request": payload}
             captured.append(raw)
             captured_ids.append(frozenset(item.item_id for item in parse_search_json(raw)))
         except Exception:
@@ -561,14 +624,31 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
         # 必须让闲鱼网页本身应用筛选。失败就停止，绝不退回全国/扩展推荐。
         if not _apply_native_price(page, watch, captured, captured_ids, cancelled):
             raise RuntimeError("闲鱼网页价格筛选没有生效，本轮已停止，未展示错误候选")
+        price_raw = _wait_for_matching_payload(
+            page, captured, query, watch, require_price=True,
+            require_region=False, cancelled=cancelled)
+        if price_raw is None:
+            raise RuntimeError("闲鱼网页返回的请求未包含当前关键词或价格，本轮已停止")
         if not _apply_native_location(page, watch, captured, captured_ids, cancelled):
             province, city, district = normalize_region(
                 watch.province, watch.city, watch.district)
             wanted = "·".join(value for value in (province, city, district) if value)
             raise RuntimeError(
                 f"闲鱼网页地区筛选“{wanted}”没有生效，本轮已停止，未展示全国商品")
+        active_raw = _wait_for_matching_payload(
+            page, captured, query, watch, require_price=True,
+            require_region=True, cancelled=cancelled)
+        if active_raw is None:
+            raise RuntimeError("闲鱼网页返回的请求未同时包含当前关键词、价格和地区，本轮已停止")
         if not _apply_native_conditions(page, watch, captured, captured_ids, cancelled):
             raise RuntimeError("闲鱼网页成色筛选没有生效，本轮已停止，未展示错误候选")
+        if watch.condition:
+            condition_raw = _wait_for_matching_payload(
+                page, captured, query, watch, require_price=True,
+                require_region=True, cancelled=cancelled)
+            if condition_raw is None:
+                raise RuntimeError("闲鱼成色筛选后的请求丢失关键词、价格或地区，本轮已停止")
+            active_raw = condition_raw
 
         start_page = max(1, int(start_page))
         max_pages = max(1, int(max_pages))
@@ -582,12 +662,18 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                     page, captured, 0, cancelled, timeout_steps=100,
                     before_dom=before_dom):
                 return []
+            next_raw = _wait_for_matching_payload(
+                page, captured, query, watch, require_price=True,
+                require_region=True, cancelled=cancelled)
+            if next_raw is None:
+                return []
+            active_raw = next_raw
             current_page += 1
 
         for done, page_no in enumerate(range(start_page, start_page + max_pages), start=1):
             if cancelled and cancelled():
                 break
-            raw = captured[-1] if captured else None
+            raw = active_raw
             page_items = parse_search_json(raw) if raw else _items_from_dom(page)
             reported_total = _reported_total(raw or {})
             if page_no == 1:
@@ -620,6 +706,12 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
             if not _wait_for_new_page(page, captured, 0, cancelled,
                                       timeout_steps=100, before_dom=before_dom):
                 raise RuntimeError(f"闲鱼第 {page_no + 1} 页没有加载完成，本轮已停止")
+            next_raw = _wait_for_matching_payload(
+                page, captured, query, watch, require_price=True,
+                require_region=True, cancelled=cancelled)
+            if next_raw is None:
+                raise RuntimeError(f"闲鱼第 {page_no + 1} 页请求丢失关键词或筛选条件，本轮已停止")
+            active_raw = next_raw
         # 页数足以覆盖闲鱼报告的全部结果时，必须逐件对账。此前只校验
         # 不足 30 件的搜索，导致闲鱼显示 98 件而软件解析 2 件仍被当成成功。
         if (start_page == 1 and first_reported_total is not None

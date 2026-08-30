@@ -181,6 +181,12 @@ button { font-family: inherit; }
    主区
    ============================================================ */
 .main { overflow-y: auto; padding: 24px 28px 40px; scroll-behavior: smooth; }
+.run-error-banner { display:flex; align-items:flex-start; gap:10px; margin:0 0 16px; padding:12px 14px; border:1px solid #efb6aa; border-radius:12px; background:#fff3ef; color:#7a2819; box-shadow:0 5px 18px #7a281912; }
+.run-error-banner > i { margin-top:2px; color:#d94a31; font-size:18px; }
+.run-error-banner div { display:grid; gap:3px; flex:1; min-width:0; }
+.run-error-banner b { font-size:13px; }
+.run-error-banner span { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.run-error-banner button { border:0; background:transparent; color:#9b6258; cursor:pointer; padding:2px; }
 
 /* 指标条 */
 .strip {
