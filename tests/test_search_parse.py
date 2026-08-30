@@ -7,7 +7,7 @@ import pytest
 from xianyu_crawler.config import Watch
 from xianyu_crawler.search import (
     parse_search_json, normalize_search_query, _native_condition, build_search_payload,
-    _wait_for_new_page, _payload_matches_watch,
+    _wait_for_new_page, _payload_matches_watch, _apply_native_price,
 )
 
 
@@ -135,3 +135,40 @@ def test_wait_accepts_real_dom_cards_when_search_response_is_cached():
             return ["123", "456"]
     assert _wait_for_new_page(Page(), [], 0, timeout_steps=1,
                               before_dom=frozenset()) is True
+
+
+def test_native_price_opens_dropdown_before_filling_and_confirms():
+    captured = []
+
+    class Keyboard:
+        def press(self, _):
+            return None
+
+    class Page:
+        keyboard = Keyboard()
+        opened_price = False
+        filled_price = False
+
+        def wait_for_timeout(self, _):
+            return None
+
+        def evaluate(self, script, arg=None):
+            if "querySelectorAll('a[href*=" in script:
+                return []
+            if arg == "价格":
+                self.opened_price = True
+                return True
+            if isinstance(arg, dict) and "min" in arg:
+                self.filled_price = self.opened_price and arg == {"min": 2000, "max": 4000}
+                return self.filled_price
+            if "查看\\d*件?宝贝" in script:
+                if self.filled_price:
+                    captured.append({"data": {}})
+                return self.filled_price
+            return False
+
+    page = Page()
+    watch = Watch(name="康泰时", keywords=["康泰时g1"], price_min=2000, price_max=4000)
+    assert _apply_native_price(page, watch, captured, []) is True
+    assert page.opened_price is True
+    assert page.filled_price is True

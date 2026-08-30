@@ -360,6 +360,11 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
     previous = list(captured)
     previous_ids = list(captured_ids)
     previous_dom = _dom_item_ids(page)
+    # 当前 PC 页的两个价格框默认收在“价格”下拉层里。旧实现直接查 input，
+    # 在面板尚未展开时永远只能得到 0 个输入框。
+    if not _click_exact_text(page, "价格"):
+        return False
+    page.wait_for_timeout(250)
     # 必须在操作前清空；旧版操作后清空，网络快时会把刚返回的新结果删掉。
     captured.clear()
     captured_ids.clear()
@@ -372,16 +377,29 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
         el.type === 'number' || /最低|最高|价格|¥|￥/.test(el.placeholder || '')
       ));
       if (inputs.length < 2) return false;
-      inputs = inputs.slice(0, 2);
+      // 同一行、相邻的两个短输入框才是最低/最高价，排除顶部搜索框。
+      inputs = inputs.sort((a, b) => {
+        const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+        return ar.top - br.top || ar.left - br.left;
+      });
+      let pair = null;
+      for (let i = 0; i < inputs.length - 1; i++) {
+        const a = inputs[i].getBoundingClientRect(), b = inputs[i + 1].getBoundingClientRect();
+        if (Math.abs(a.top - b.top) < 16 && b.left > a.left && a.width < 240 && b.width < 240) {
+          pair = [inputs[i], inputs[i + 1]];
+          break;
+        }
+      }
+      if (!pair) pair = inputs.slice(0, 2);
+      inputs = pair;
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       [values.min, values.max].forEach((value, index) => {
         if (value === null || value === undefined) return;
+        inputs[index].focus();
         setter.call(inputs[index], String(value));
-        inputs[index].dispatchEvent(new Event('input', { bubbles: true }));
+        inputs[index].dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: String(value) }));
         inputs[index].dispatchEvent(new Event('change', { bubbles: true }));
       });
-      inputs[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
-      inputs[1].dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
       inputs[1].blur();
       return true;
     }""", {"min": watch.price_min, "max": watch.price_max})
@@ -389,11 +407,13 @@ def _apply_native_price(page, watch: Watch, captured: list[dict],
         captured[:] = previous
         captured_ids[:] = previous_ids
         return False
-    if (_wait_for_new_page(page, captured, 0, cancelled, timeout_steps=50,
-                           before_dom=previous_dom)
-            or (_click_filter_apply(page)
-                and _wait_for_new_page(page, captured, 0, cancelled,
-                                       before_dom=previous_dom))):
+    # 当前闲鱼页面必须点面板里的“确定/查看宝贝”才提交；仅 blur 或 Enter
+    # 不会产生筛选请求。先点确认，再等待真实响应。
+    applied = _click_filter_apply(page)
+    if not applied:
+        page.keyboard.press("Enter")
+    if _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=80,
+                          before_dom=previous_dom):
         return True
     captured[:] = previous
     captured_ids[:] = previous_ids
