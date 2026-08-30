@@ -521,38 +521,75 @@ def _items_from_dom(page) -> list[Item]:
 
 def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
            start_page: int = 1, progress=None, cancelled=None) -> list[Item]:
-    """在闲鱼已登录页面环境中调用原生 mtop 搜索，筛选和分页均由服务端执行。"""
+    """使用闲鱼真实 PC 搜索页完成筛选，并读取网页自身发出的搜索响应。
+
+    不再自行拼装地区/关键词请求。闲鱼接口即使返回 SUCCESS，也可能忽略
+    未配套的页面状态并退回扩展推荐；这正是网页近百件、软件却得到 92 条
+    无关候选的根因。
+    """
     page = ctx.new_page()
     out: list[Item] = []
     seen: set[str] = set()
     first_reported_total: int | None = None
+    captured: list[dict] = []
+    captured_ids: list[frozenset[str]] = []
+
+    def capture_response(response) -> None:
+        if SEARCH_API not in response.url:
+            return
+        try:
+            raw = response.json()
+            if not isinstance(raw, dict):
+                return
+            ret = raw.get("ret") or []
+            if ret and not any(str(value).startswith("SUCCESS") for value in ret):
+                return
+            captured.append(raw)
+            captured_ids.append(frozenset(item.item_id for item in parse_search_json(raw)))
+        except Exception:
+            return
+
+    page.on("response", capture_response)
     try:
         query = " ".join(k.strip() for k in watch.keywords if k.strip())  # 多词块拼一条 query
         query = normalize_search_query(query)
         page.goto(f"{search_url}?q={quote(query)}", wait_until="domcontentloaded", timeout=15000)
-        # 等待页面初始化登录态与 mtop 库；不要求搜索页一定重新发起首屏请求。
-        for _ in range(100):
-            if cancelled and cancelled():
-                return []
-            ready = bool(_cookie_value(ctx, "_m_h5_tk"))
-            try:
-                ready = ready or bool(page.evaluate(
-                    "() => !!(window.lib && window.lib.mtop && window.lib.mtop.request)"))
-            except Exception:
-                pass
-            if ready:
-                break
-            page.wait_for_timeout(100)
+        if not _wait_for_new_page(page, captured, 0, cancelled, timeout_steps=100,
+                                  before_dom=frozenset()):
+            raise RuntimeError("闲鱼搜索页没有加载出商品，请检查登录状态或稍后重试")
+
+        # 必须让闲鱼网页本身应用筛选。失败就停止，绝不退回全国/扩展推荐。
+        if not _apply_native_price(page, watch, captured, captured_ids, cancelled):
+            raise RuntimeError("闲鱼网页价格筛选没有生效，本轮已停止，未展示错误候选")
+        if not _apply_native_location(page, watch, captured, captured_ids, cancelled):
+            province, city, district = normalize_region(
+                watch.province, watch.city, watch.district)
+            wanted = "·".join(value for value in (province, city, district) if value)
+            raise RuntimeError(
+                f"闲鱼网页地区筛选“{wanted}”没有生效，本轮已停止，未展示全国商品")
+        if not _apply_native_conditions(page, watch, captured, captured_ids, cancelled):
+            raise RuntimeError("闲鱼网页成色筛选没有生效，本轮已停止，未展示错误候选")
+
         start_page = max(1, int(start_page))
         max_pages = max(1, int(max_pages))
-        for done, page_no in enumerate(
-                range(start_page, start_page + max_pages), start=1):
+        # 深度轮换需要先从筛选后的第一页逐页走到目标页，确保页码和网页一致。
+        current_page = 1
+        while current_page < start_page:
+            before_dom = _dom_item_ids(page)
+            captured.clear()
+            captured_ids.clear()
+            if not _click_next_page(page) or not _wait_for_new_page(
+                    page, captured, 0, cancelled, timeout_steps=100,
+                    before_dom=before_dom):
+                return []
+            current_page += 1
+
+        for done, page_no in enumerate(range(start_page, start_page + max_pages), start=1):
             if cancelled and cancelled():
                 break
-            raw = _page_native_search_request(
-                page, ctx, build_search_payload(query, watch, page_no))
-            page_items = parse_search_json(raw)
-            reported_total = _reported_total(raw)
+            raw = captured[-1] if captured else None
+            page_items = parse_search_json(raw) if raw else _items_from_dom(page)
+            reported_total = _reported_total(raw or {})
             if page_no == 1:
                 first_reported_total = reported_total
             # 对于不足一页的搜索（如用户实测杭州 11 件），解析数必须与闲鱼报告
@@ -573,8 +610,16 @@ def search(ctx, watch: Watch, max_pages: int = 3, search_url: str = SEARCH_URL,
                 out.append(item)
             if progress:
                 progress(done, max_pages)
-            if done >= max_pages or _has_next_page(raw) is False:
+            if done >= max_pages or (raw is not None and _has_next_page(raw) is False):
                 break
+            before_dom = _dom_item_ids(page)
+            captured.clear()
+            captured_ids.clear()
+            if not _click_next_page(page):
+                break
+            if not _wait_for_new_page(page, captured, 0, cancelled,
+                                      timeout_steps=100, before_dom=before_dom):
+                raise RuntimeError(f"闲鱼第 {page_no + 1} 页没有加载完成，本轮已停止")
         # 页数足以覆盖闲鱼报告的全部结果时，必须逐件对账。此前只校验
         # 不足 30 件的搜索，导致闲鱼显示 98 件而软件解析 2 件仍被当成成功。
         if (start_page == 1 and first_reported_total is not None

@@ -197,7 +197,7 @@ def rereview_pending(session: Session, settings: Settings) -> dict:
 
     reviewed = passed = rejected = not_run = skipped = 0
     for wname, recs in by_watch.items():
-        requirement = requirements.get(wname)
+        requirement = requirements.get(wname) if wname is not None else None
         if not requirement:                  # 该监控条件没写「AI 审核要求」→ 无从审核
             skipped += len(recs)
             continue
